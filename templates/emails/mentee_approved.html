@@ -1,0 +1,55 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Welcome! Your Eaglet Profile is Approved - Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2 style="color: #22C55E;">Welcome to Eagles & Eaglets!</h2>
+
+<p>Hi {{ user.first_name }},</p>
+
+<p>
+    <strong>Great news!</strong> Your Eaglet (Mentee) profile has been <span style="color: #22C55E; font-weight: bold;">approved</span>. You're now officially part of the Eagles & Eaglets community!
+</p>
+
+<div class="info-box" style="background-color: #F0FDF4; border-left: 4px solid #22C55E;">
+    <p><strong>What you can do now:</strong></p>
+    <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+        <li>Browse and connect with Eagle Mentors</li>
+        <li>Join mentorship Nests that match your interests</li>
+        <li>Access exclusive content and resources</li>
+        <li>Earn points and track your growth journey</li>
+    </ul>
+</div>
+
+<p>
+    Ready to start your growth journey? Log in to explore:
+</p>
+
+<div style="text-align: center;">
+    <a href="{{ dashboard_url }}" class="button" style="background-color: #22C55E;">Start Exploring</a>
+</div>
+
+<p>
+    <strong>Tips to Get the Most Out of Your Journey:</strong>
+</p>
+<ul style="color: #4B5563;">
+    <li>Complete your profile to help mentors understand your goals</li>
+    <li>Browse available mentors and find someone who inspires you</li>
+    <li>Join Nests that align with your interests and career goals</li>
+    <li>Be proactive and engage with the community</li>
+</ul>
+
+<p>
+    We're excited to have you on board and look forward to seeing you grow and achieve your goals!
+</p>
+
+<p>
+    <em>"As iron sharpens iron, so one person sharpens another."</em>
+    <br><small>- Proverbs 27:17</small>
+</p>
+
+<p>
+    Welcome aboard,<br>
+    <strong>The Eagles & Eaglets Team</strong>
+</p>
+{% endblock %}

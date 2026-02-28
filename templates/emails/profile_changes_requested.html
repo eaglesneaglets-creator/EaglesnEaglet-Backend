@@ -1,0 +1,49 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Action Required: Please Update Your Profile - Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2 style="color: #F59E0B;">Action Required</h2>
+
+<p>Hi {{ user.first_name }},</p>
+
+<p>
+    Thank you for submitting your {% if role == 'mentor' %}Eagle (Mentor){% else %}Eaglet (Mentee){% endif %} profile to Eagles & Eaglets.
+</p>
+
+<p>
+    Our team has reviewed your application and would like you to <strong>make a few updates</strong> before we can proceed with the approval.
+</p>
+
+<div style="background-color: #FEF3C7; border: 1px solid #FCD34D; border-left: 4px solid #F59E0B; border-radius: 8px; padding: 16px; margin: 24px 0;">
+    <p style="margin: 0; color: #92400E;"><strong>Requested Changes:</strong></p>
+    <div style="margin: 10px 0 0 0; color: #78350F; white-space: pre-line;">{{ review_notes }}</div>
+</div>
+
+<p>
+    <strong>How to update your profile:</strong>
+</p>
+<ol style="color: #4B5563;">
+    <li>Log in to your Eagles & Eaglets account</li>
+    <li>Go to your profile settings</li>
+    <li>Make the requested changes</li>
+    <li>Resubmit your profile for review</li>
+</ol>
+
+<div style="text-align: center;">
+    <a href="{{ profile_url }}" class="button" style="background-color: #F59E0B;">Update My Profile</a>
+</div>
+
+<p>
+    Once you've made the updates, simply resubmit your profile and our team will review it promptly.
+</p>
+
+<p>
+    If you have any questions about the requested changes, please don't hesitate to reach out to our support team.
+</p>
+
+<p>
+    Best regards,<br>
+    <strong>The Eagles & Eaglets Team</strong>
+</p>
+{% endblock %}

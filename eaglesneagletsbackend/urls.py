@@ -51,11 +51,10 @@ api_v1_patterns = [
     # Health check
     path('health/', health_check, name='health-check'),
 
-    # Authentication (to be implemented)
-    # path('auth/', include('apps.users.urls')),
+    # Authentication
+    path('auth/', include('apps.users.urls')),
 
     # Core app URLs (to be implemented)
-    # path('users/', include('apps.users.api_urls')),
     # path('nests/', include('apps.nests.urls')),
     # path('content/', include('apps.content.urls')),
     # path('points/', include('apps.points.urls')),

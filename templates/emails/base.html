@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Eagles & Eaglets{% endblock %}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #1F2937;
+            margin: 0;
+            padding: 0;
+            background-color: #F9FAFB;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #FFFFFF;
+        }
+        .header {
+            background: linear-gradient(135deg, #22C55E 0%, #16A34A 100%);
+            padding: 30px 40px;
+            text-align: center;
+        }
+        .header img {
+            max-width: 180px;
+            height: auto;
+        }
+        .header h1 {
+            color: #FFFFFF;
+            margin: 15px 0 0 0;
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .content {
+            padding: 40px;
+        }
+        .content h2 {
+            color: #1F2937;
+            margin-top: 0;
+            font-size: 22px;
+        }
+        .content p {
+            color: #4B5563;
+            margin: 16px 0;
+        }
+        .button {
+            display: inline-block;
+            background-color: #22C55E;
+            color: #FFFFFF !important;
+            text-decoration: none;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            margin: 24px 0;
+        }
+        .button:hover {
+            background-color: #16A34A;
+        }
+        .info-box {
+            background-color: #F0FDF4;
+            border: 1px solid #BBF7D0;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 24px 0;
+        }
+        .info-box p {
+            margin: 0;
+            color: #166534;
+        }
+        .footer {
+            background-color: #F9FAFB;
+            padding: 30px 40px;
+            text-align: center;
+            border-top: 1px solid #E5E7EB;
+        }
+        .footer p {
+            color: #6B7280;
+            font-size: 14px;
+            margin: 8px 0;
+        }
+        .footer a {
+            color: #22C55E;
+            text-decoration: none;
+        }
+        .social-links {
+            margin: 20px 0;
+        }
+        .social-links a {
+            display: inline-block;
+            margin: 0 8px;
+            color: #6B7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Eagles & Eaglets</h1>
+            <p style="color: #FFFFFF; margin: 5px 0 0 0; opacity: 0.9;">Mentorship Program</p>
+        </div>
+
+        <div class="content">
+            {% block content %}{% endblock %}
+        </div>
+
+        <div class="footer">
+            <p><strong>Eagles & Eaglets</strong></p>
+            <p>Building the next generation of leaders</p>
+            <p style="margin-top: 20px; font-size: 12px;">
+                If you have any questions, contact us at
+                <a href="mailto:{{ support_email }}">{{ support_email }}</a>
+            </p>
+            <p style="font-size: 12px; color: #9CA3AF;">
+                &copy; {% now "Y" %} Eagles & Eaglets. All rights reserved.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

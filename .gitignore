@@ -95,6 +95,7 @@ dmypy.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+nul
 
 # =============================================================================
 # Celery

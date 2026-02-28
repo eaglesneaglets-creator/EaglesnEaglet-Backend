@@ -44,18 +44,45 @@ def custom_exception_handler(exc, context):
         error_details = None
         error_message = 'An error occurred'
 
+        def extract_message(value):
+            """Extract a clean string message from various error formats."""
+            if isinstance(value, list):
+                if value:
+                    # Get first item and extract string
+                    first = value[0]
+                    if hasattr(first, 'message'):
+                        return str(first.message) if first.message else str(first)
+                    return str(first)
+                return 'An error occurred'
+            if hasattr(value, 'message'):
+                return str(value.message) if value.message else str(value)
+            return str(value)
+
         if isinstance(response.data, dict):
             # Handle nested error structures
             if 'detail' in response.data:
-                error_message = str(response.data['detail'])
+                error_message = extract_message(response.data['detail'])
             elif 'non_field_errors' in response.data:
-                error_message = str(response.data['non_field_errors'][0])
+                error_message = extract_message(response.data['non_field_errors'])
                 error_details = response.data
+            elif 'error' in response.data and isinstance(response.data['error'], dict):
+                # Already formatted error
+                error_message = response.data['error'].get('message', 'An error occurred')
+                error_details = response.data['error'].get('details')
             else:
+                # Field-level validation errors
                 error_message = 'Validation failed'
-                error_details = response.data
+                error_details = {}
+                for field, errors in response.data.items():
+                    if isinstance(errors, list) and errors:
+                        error_details[field] = extract_message(errors)
+                    else:
+                        error_details[field] = extract_message(errors)
+                # Use first field error as main message if only one field has errors
+                if len(error_details) == 1:
+                    error_message = list(error_details.values())[0]
         elif isinstance(response.data, list):
-            error_message = str(response.data[0]) if response.data else 'An error occurred'
+            error_message = extract_message(response.data)
         else:
             error_message = str(response.data)
 

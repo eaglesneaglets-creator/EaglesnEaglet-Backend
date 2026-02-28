@@ -1,0 +1,43 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Action Required: Update Your Application - Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2>Updates Needed for Your Application</h2>
+
+<p>Hi {{ user.first_name }},</p>
+
+<p>
+    Thank you for your mentor application. After reviewing your submission, our team has identified some areas that need your attention before we can proceed.
+</p>
+
+<div class="info-box" style="background-color: #FEF3C7; border-left: 4px solid #F59E0B;">
+    <p><strong>What needs to be updated:</strong></p>
+    <div style="margin-top: 10px; white-space: pre-wrap; font-size: 14px;">{{ review_notes }}</div>
+</div>
+
+<p>
+    Please update your application with the requested changes:
+</p>
+
+<div style="text-align: center;">
+    <a href="{{ kyc_url }}" class="button">Update Application</a>
+</div>
+
+<p>
+    Once you've made the necessary updates, your application will be re-reviewed promptly.
+</p>
+
+<p>
+    If you have any questions about the required changes, please don't hesitate to reach out to our support team at <a href="mailto:{{ support_email }}">{{ support_email }}</a>.
+</p>
+
+<p>
+    We appreciate your patience and look forward to reviewing your updated application!
+</p>
+
+<p>
+    Best regards,<br>
+    <strong>The Eagles & Eaglets Team</strong>
+</p>
+{% endblock %}

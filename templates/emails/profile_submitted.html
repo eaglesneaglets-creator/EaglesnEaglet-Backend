@@ -1,0 +1,57 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Your Profile is Under Review - Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2>Thank You for Completing Your Profile!</h2>
+
+<p>Hi {{ user.first_name }},</p>
+
+<p>
+    We've received your {% if role == 'mentor' %}Eagle (Mentor){% else %}Eaglet (Mentee){% endif %} profile and it's now <strong>under review</strong> by our team.
+</p>
+
+<div class="info-box">
+    <p><strong>What happens next?</strong></p>
+    <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #166534;">
+        <li>Our team will review your application within 2-3 business days</li>
+        <li>You'll receive an email notification once a decision is made</li>
+        <li>If we need additional information, we'll reach out</li>
+    </ul>
+</div>
+
+<div style="background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 24px 0;">
+    <p style="margin: 0; color: #4B5563;"><strong>Profile Summary:</strong></p>
+    <table style="width: 100%; margin-top: 10px; color: #4B5563;">
+        <tr>
+            <td style="padding: 4px 0;">Application Type:</td>
+            <td style="padding: 4px 0; font-weight: 600;">{% if role == 'mentor' %}Eagle (Mentor){% else %}Eaglet (Mentee){% endif %}</td>
+        </tr>
+        <tr>
+            <td style="padding: 4px 0;">Submitted:</td>
+            <td style="padding: 4px 0; font-weight: 600;">{{ submitted_at|date:"F d, Y" }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 4px 0;">Status:</td>
+            <td style="padding: 4px 0;"><span style="background-color: #FEF3C7; color: #92400E; padding: 2px 8px; border-radius: 4px; font-size: 13px;">Under Review</span></td>
+        </tr>
+    </table>
+</div>
+
+<p>
+    While you wait, feel free to explore our resources and learn more about the Eagles & Eaglets community.
+</p>
+
+<div style="text-align: center;">
+    <a href="{{ frontend_url }}" class="button">Visit Eagles & Eaglets</a>
+</div>
+
+<p>
+    Thank you for your interest in joining our mentorship community!
+</p>
+
+<p>
+    Best regards,<br>
+    <strong>The Eagles & Eaglets Team</strong>
+</p>
+{% endblock %}

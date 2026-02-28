@@ -1,0 +1,56 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<h1 style="color: #22C55E; margin-bottom: 20px;">Welcome to the Nest, {{ user.first_name }}! 🦅</h1>
+
+<p style="color: #4B5563; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+    Congratulations on completing your profile! You're now officially part of the Eagles & Eaglets community.
+</p>
+
+<p style="color: #4B5563; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+    Your mentorship journey begins now. Here's what you can do:
+</p>
+
+<div style="background-color: #F0FDF4; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+    <ul style="color: #166534; font-size: 15px; line-height: 1.8; margin: 0; padding-left: 20px;">
+        <li><strong>Explore Mentors</strong> - Browse our verified Eagles and find the perfect match</li>
+        <li><strong>Join a Nest</strong> - Connect with mentors and fellow mentees in community groups</li>
+        <li><strong>Access Content</strong> - Learn from our library of mentorship resources</li>
+        <li><strong>Earn Points</strong> - Complete activities and track your growth</li>
+    </ul>
+</div>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ explore_url }}" style="display: inline-block; background-color: #22C55E; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+        Explore Mentors
+    </a>
+</div>
+
+<div style="text-align: center; margin-bottom: 30px;">
+    <a href="{{ dashboard_url }}" style="color: #22C55E; text-decoration: none; font-weight: 500; font-size: 14px;">
+        Or log in to your account →
+    </a>
+</div>
+
+<div style="border-top: 1px solid #E5E7EB; padding-top: 20px; margin-top: 30px;">
+    <p style="color: #6B7280; font-size: 14px; line-height: 1.6; margin: 0;">
+        <strong>Tips for Success:</strong>
+    </p>
+    <ul style="color: #6B7280; font-size: 14px; line-height: 1.8; margin: 10px 0 0 0; padding-left: 20px;">
+        <li>Be proactive in reaching out to mentors</li>
+        <li>Set clear goals for what you want to achieve</li>
+        <li>Engage actively in your Nest community</li>
+        <li>Track your progress and celebrate milestones</li>
+    </ul>
+</div>
+
+<p style="color: #4B5563; font-size: 14px; line-height: 1.6; margin-top: 24px;">
+    Questions or need help? Reach out to us at
+    <a href="mailto:{{ support_email }}" style="color: #22C55E;">{{ support_email }}</a>
+</p>
+
+<p style="color: #4B5563; font-size: 16px; line-height: 1.6; margin-top: 24px;">
+    We're excited to have you on this journey!<br>
+    <strong style="color: #1F2937;">The Eagles & Eaglets Team</strong>
+</p>
+{% endblock %}
