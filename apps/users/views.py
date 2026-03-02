@@ -1229,14 +1229,23 @@ class UploadDisplayPictureView(APIView):
                 }
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Save the file
+        # Upload via Cloudinary with optimization
+        from core.storage import upload_to_cloudinary, get_optimized_url
+
+        result = upload_to_cloudinary(file, 'profile_pictures')
+
+        # Save the file reference on the KYC model
         kyc.display_picture = file
         kyc.save(update_fields=['display_picture'])
 
+        # Return both original and optimized URLs
+        public_id = result.get('public_id')
         return Response({
             'success': True,
             'data': {
-                'display_picture': kyc.display_picture.url if kyc.display_picture else None
+                'display_picture': result.get('secure_url') or (kyc.display_picture.url if kyc.display_picture else None),
+                'optimized_url': get_optimized_url(public_id, preset='profile') if public_id else None,
+                'thumbnail_url': get_optimized_url(public_id, preset='thumbnail') if public_id else None,
             },
             'message': 'Profile picture uploaded successfully.'
         })
@@ -2127,16 +2136,19 @@ class AdminDashboardStatsView(APIView):
 
     def get(self, request):
         from django.db.models import Count
-        from django.db.models.functions import TruncDate
+        from django.db.models.functions import TruncDate, TruncWeek
         from datetime import timedelta
+
+        period = request.query_params.get('period', 'weekly')
 
         # User stats
         total_users = User.objects.filter(deleted_at__isnull=True).count()
         total_eagles = User.objects.filter(role='eagle', deleted_at__isnull=True).count()
         total_eaglets = User.objects.filter(role='eaglet', deleted_at__isnull=True).count()
+        suspended_users = User.objects.filter(status='suspended', deleted_at__isnull=True).count()
 
-        # KYC stats
-        kyc_stats = MentorKYC.objects.aggregate(
+        # Mentor KYC stats
+        mentor_kyc_stats = MentorKYC.objects.aggregate(
             total=Count('id'),
             pending=Count('id', filter=models.Q(status__in=['submitted', 'under_review'])),
             approved=Count('id', filter=models.Q(status='approved')),
@@ -2144,21 +2156,112 @@ class AdminDashboardStatsView(APIView):
             requires_changes=Count('id', filter=models.Q(status='requires_changes')),
         )
 
-        # Recent registrations (last 7 days)
-        week_ago = timezone.now() - timedelta(days=7)
-        recent_registrations = User.objects.filter(
-            created_at__gte=week_ago,
-            deleted_at__isnull=True
-        ).annotate(
-            date=TruncDate('created_at')
-        ).values('date').annotate(
-            count=Count('id')
-        ).order_by('date')
+        # Mentee KYC stats
+        mentee_kyc_stats = MenteeKYC.objects.aggregate(
+            total=Count('id'),
+            pending=Count('id', filter=models.Q(status__in=['submitted', 'under_review'])),
+            approved=Count('id', filter=models.Q(status='approved')),
+            rejected=Count('id', filter=models.Q(status='rejected')),
+            requires_changes=Count('id', filter=models.Q(status='requires_changes')),
+        )
 
-        # Recent KYC submissions (last 5)
-        recent_kyc = MentorKYC.objects.filter(
-            status__in=['submitted', 'under_review']
-        ).select_related('user').order_by('-submitted_at')[:5]
+        # Combined pending KYC
+        total_pending_kyc = (mentor_kyc_stats['pending'] or 0) + (mentee_kyc_stats['pending'] or 0)
+
+        # Registration chart data based on period
+        if period == 'monthly':
+            # Last 30 days — aggregated by week (4 data points)
+            month_ago = timezone.now() - timedelta(days=28)
+            recent_registrations = list(
+                User.objects.filter(
+                    created_at__gte=month_ago,
+                    deleted_at__isnull=True
+                ).annotate(
+                    week=TruncWeek('created_at')
+                ).values('week').annotate(
+                    count=Count('id')
+                ).order_by('week')
+            )
+            # Convert week dates to ISO strings for JSON serialization
+            for entry in recent_registrations:
+                entry['date'] = entry.pop('week').isoformat()[:10]
+        else:
+            # Last 7 days — daily granularity
+            week_ago = timezone.now() - timedelta(days=7)
+            recent_registrations = list(
+                User.objects.filter(
+                    created_at__gte=week_ago,
+                    deleted_at__isnull=True
+                ).annotate(
+                    date=TruncDate('created_at')
+                ).values('date').annotate(
+                    count=Count('id')
+                ).order_by('date')
+            )
+
+        # Recent activity (last 10 events from various sources)
+        recent_activity = []
+
+        # Recent user registrations
+        new_users = User.objects.filter(
+            deleted_at__isnull=True
+        ).order_by('-created_at')[:5]
+        for u in new_users:
+            recent_activity.append({
+                'type': 'registration',
+                'icon': 'person_add',
+                'icon_bg': 'bg-emerald-100 text-emerald-600',
+                'title': 'New user registered',
+                'description': f'{u.full_name} joined as {u.get_role_display()}',
+                'timestamp': u.created_at.isoformat(),
+            })
+
+        # Recent KYC submissions (mentors)
+        recent_mentor_kyc = MentorKYC.objects.filter(
+            submitted_at__isnull=False
+        ).select_related('user').order_by('-submitted_at')[:3]
+        for kyc in recent_mentor_kyc:
+            recent_activity.append({
+                'type': 'kyc_submission',
+                'icon': 'verified_user',
+                'icon_bg': 'bg-blue-100 text-blue-600',
+                'title': 'KYC submitted',
+                'description': f'{kyc.user.full_name} (Eagle) submitted KYC for review',
+                'timestamp': kyc.submitted_at.isoformat(),
+            })
+
+        # Recent KYC submissions (mentees)
+        recent_mentee_kyc = MenteeKYC.objects.filter(
+            submitted_at__isnull=False
+        ).select_related('user').order_by('-submitted_at')[:3]
+        for kyc in recent_mentee_kyc:
+            recent_activity.append({
+                'type': 'kyc_submission',
+                'icon': 'how_to_reg',
+                'icon_bg': 'bg-purple-100 text-purple-600',
+                'title': 'KYC submitted',
+                'description': f'{kyc.user.full_name} (Eaglet) submitted KYC for review',
+                'timestamp': kyc.submitted_at.isoformat(),
+            })
+
+        # Recent suspensions
+        suspended = User.objects.filter(
+            status='suspended',
+            suspended_at__isnull=False
+        ).order_by('-suspended_at')[:2]
+        for u in suspended:
+            recent_activity.append({
+                'type': 'suspension',
+                'icon': 'block',
+                'icon_bg': 'bg-red-100 text-red-600',
+                'title': 'User suspended',
+                'description': f'{u.full_name} was suspended',
+                'timestamp': u.suspended_at.isoformat(),
+            })
+
+        # Sort all activity by timestamp (most recent first)
+        recent_activity.sort(key=lambda x: x['timestamp'], reverse=True)
+        recent_activity = recent_activity[:10]
 
         return Response({
             'success': True,
@@ -2167,9 +2270,124 @@ class AdminDashboardStatsView(APIView):
                     'total': total_users,
                     'eagles': total_eagles,
                     'eaglets': total_eaglets,
+                    'suspended': suspended_users,
                 },
-                'kyc': kyc_stats,
-                'recent_registrations': list(recent_registrations),
-                'recent_kyc_submissions': MentorKYCListSerializer(recent_kyc, many=True).data,
+                'kyc': {
+                    'mentor': mentor_kyc_stats,
+                    'mentee': mentee_kyc_stats,
+                    'total_pending': total_pending_kyc,
+                },
+                'recent_registrations': recent_registrations,
+                'chart_period': period,
+                'recent_activity': recent_activity,
+            }
+        })
+
+
+class AdminSuspendUserView(APIView):
+    """
+    Suspend an approved user (revoke platform access).
+    POST /api/v1/auth/admin/users/<user_id>/suspend/
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request, user_id):
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 404,
+                    'type': 'NotFound',
+                    'message': 'User not found.',
+                }
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Can't suspend admins
+        if user.role == 'admin':
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 400,
+                    'type': 'ValidationError',
+                    'message': 'Cannot suspend admin users.',
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Can't suspend already suspended users
+        if user.status == 'suspended':
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 400,
+                    'type': 'ValidationError',
+                    'message': 'User is already suspended.',
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate reason
+        reason = request.data.get('reason', '').strip()
+        if not reason or len(reason) < 10:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 400,
+                    'type': 'ValidationError',
+                    'message': 'A suspension reason of at least 10 characters is required.',
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        user.suspend(request.user, reason)
+
+        return Response({
+            'success': True,
+            'data': {
+                'message': f'{user.full_name} has been suspended.',
+                'user_id': str(user.id),
+                'status': user.status,
+                'suspended_at': user.suspended_at.isoformat(),
+            }
+        })
+
+
+class AdminReactivateUserView(APIView):
+    """
+    Reactivate a suspended user.
+    POST /api/v1/auth/admin/users/<user_id>/reactivate/
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request, user_id):
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 404,
+                    'type': 'NotFound',
+                    'message': 'User not found.',
+                }
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        if user.status != 'suspended':
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 400,
+                    'type': 'ValidationError',
+                    'message': 'User is not currently suspended.',
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        user.reactivate(request.user)
+
+        return Response({
+            'success': True,
+            'data': {
+                'message': f'{user.full_name} has been reactivated.',
+                'user_id': str(user.id),
+                'status': user.status,
             }
         })

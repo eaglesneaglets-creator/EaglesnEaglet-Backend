@@ -109,7 +109,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
 
     # Profile image
     avatar = models.ImageField(
-        upload_to='avatars/%Y/%m/',
+        upload_to='eaglesneaglets/images/profile_pictures/',
         blank=True,
         null=True
     )
@@ -154,6 +154,15 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
     # Terms acceptance
     terms_accepted_at = models.DateTimeField(null=True, blank=True)
     privacy_accepted_at = models.DateTimeField(null=True, blank=True)
+
+    # Suspension / Revocation
+    suspended_at = models.DateTimeField(null=True, blank=True)
+    suspended_by = models.ForeignKey(
+        'self', null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='suspended_users'
+    )
+    suspension_reason = models.TextField(blank=True)
 
     # Soft delete
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -271,6 +280,26 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
             self.last_login_ip = ip_address
         self.reset_failed_login()
         self.save(update_fields=['last_login', 'last_login_ip'])
+
+    def suspend(self, admin_user, reason):
+        """Suspend user account (revoke access)."""
+        self.status = self.Status.SUSPENDED
+        self.suspended_at = timezone.now()
+        self.suspended_by = admin_user
+        self.suspension_reason = reason
+        self.save(update_fields=[
+            'status', 'suspended_at', 'suspended_by', 'suspension_reason'
+        ])
+
+    def reactivate(self, admin_user):
+        """Reactivate a suspended user account."""
+        self.status = self.Status.ACTIVE
+        self.suspended_at = None
+        self.suspended_by = None
+        self.suspension_reason = ''
+        self.save(update_fields=[
+            'status', 'suspended_at', 'suspended_by', 'suspension_reason'
+        ])
 
     def soft_delete(self):
         """Soft delete the user."""
@@ -409,7 +438,7 @@ class MentorKYC(TimestampMixin):
     # NEW: Personal Information (PM Requirements)
     # =========================================================================
     display_picture = models.ImageField(
-        upload_to='kyc/profile_pictures/%Y/%m/',
+        upload_to='eaglesneaglets/images/profile_pictures/',
         blank=True,
         null=True,
         validators=[validate_image_file],
@@ -447,7 +476,7 @@ class MentorKYC(TimestampMixin):
         help_text='Profile description / bio about mentor experience and expertise'
     )
     cv = models.FileField(
-        upload_to='kyc/cvs/mentors/%Y/%m/',
+        upload_to='eaglesneaglets/documents/cvs/',
         blank=True,
         null=True,
         validators=[validate_cv_file],
@@ -463,7 +492,7 @@ class MentorKYC(TimestampMixin):
     # LEGACY: Step 1: Personal Identification (kept for backward compatibility)
     # =========================================================================
     government_id = models.FileField(
-        upload_to='kyc/government_ids/%Y/%m/',
+        upload_to='eaglesneaglets/documents/government_ids/',
         blank=True,
         null=True,
         help_text='[LEGACY] Government-issued ID (passport, driver\'s license, national ID)'
@@ -499,7 +528,7 @@ class MentorKYC(TimestampMixin):
         help_text='Brief spiritual journey/testimony (max 500 words)'
     )
     recommendation_letter = models.FileField(
-        upload_to='kyc/recommendations/%Y/%m/',
+        upload_to='eaglesneaglets/documents/recommendations/',
         blank=True,
         null=True,
         help_text='Recommendation letter from pastor or ministry leader'
@@ -867,7 +896,7 @@ class MenteeKYC(TimestampMixin):
     # Personal Information
     # =========================================================================
     display_picture = models.ImageField(
-        upload_to='kyc/profile_pictures/%Y/%m/',
+        upload_to='eaglesneaglets/images/profile_pictures/',
         blank=True,
         null=True,
         validators=[validate_image_file],
@@ -926,7 +955,7 @@ class MenteeKYC(TimestampMixin):
         help_text='LinkedIn profile URL (optional)'
     )
     cv = models.FileField(
-        upload_to='kyc/cvs/mentees/%Y/%m/',
+        upload_to='eaglesneaglets/documents/cvs/',
         blank=True,
         null=True,
         validators=[validate_cv_file],

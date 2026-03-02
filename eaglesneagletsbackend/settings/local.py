@@ -7,6 +7,7 @@ Run with: python manage.py runserver --settings=eaglesneagletsbackend.settings.l
 
 from .base import *
 from decouple import config, Csv
+import cloudinary
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-local-dev-key-change-in-production')
@@ -163,3 +164,45 @@ CSRF_COOKIE_SECURE = False
 GOOGLE_OAUTH2_CLIENT_ID = config('GOOGLE_OAUTH2_CLIENT_ID', default='')
 GOOGLE_OAUTH2_CLIENT_SECRET = config('GOOGLE_OAUTH2_CLIENT_SECRET', default='')
 GOOGLE_OAUTH2_REDIRECT_URI = config('GOOGLE_OAUTH2_REDIRECT_URI', default='http://localhost:5173/auth/google/callback')
+
+
+# =============================================================================
+# Cloudinary Configuration (Media Storage)
+# =============================================================================
+# Separate folders per file type to keep everything organized
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': config('CLOUDINARY_CLOUD_NAME', default=''),
+    'API_KEY': config('CLOUDINARY_API_KEY', default=''),
+    'API_SECRET': config('CLOUDINARY_API_SECRET', default=''),
+}
+
+cloudinary.config(
+    cloud_name=config('CLOUDINARY_CLOUD_NAME', default=''),
+    api_key=config('CLOUDINARY_API_KEY', default=''),
+    api_secret=config('CLOUDINARY_API_SECRET', default=''),
+    secure=True,
+)
+
+# Cloudinary optimization defaults
+# f_auto: auto-select best format (WebP, AVIF, etc.) based on browser support
+# q_auto: automatic quality compression (reduces file size ~40-60% with no visible loss)
+CLOUDINARY_OPTIMIZATION = {
+    'fetch_format': 'auto',
+    'quality': 'auto',
+    'flags': 'progressive',
+}
+
+# Use Cloudinary as default file storage for media files
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+# Cloudinary folder mapping (used by upload helpers)
+CLOUDINARY_FOLDERS = {
+    'profile_pictures': 'eaglesneaglets/images/profile_pictures',
+    'government_ids': 'eaglesneaglets/documents/government_ids',
+    'cvs': 'eaglesneaglets/documents/cvs',
+    'recommendations': 'eaglesneaglets/documents/recommendations',
+    'videos': 'eaglesneaglets/videos',
+    'content_images': 'eaglesneaglets/images/content',
+    'store_images': 'eaglesneaglets/images/store',
+    'misc': 'eaglesneaglets/misc',
+}

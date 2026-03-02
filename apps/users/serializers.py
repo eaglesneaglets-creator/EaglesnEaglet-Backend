@@ -47,6 +47,12 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'detail': 'This account has been deactivated.'
             })
 
+        # Check if account is suspended
+        if user.status == 'suspended':
+            raise serializers.ValidationError({
+                'detail': 'Your account has been suspended. Please contact support for more information.'
+            })
+
         # Check if user registered via OAuth and has no password
         if user.google_id and not user.has_usable_password():
             raise serializers.ValidationError({
@@ -54,13 +60,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             })
 
         # Authenticate
-        user = authenticate(
+        auth_user = authenticate(
             request=self.context.get('request'),
             email=email,
             password=password
         )
 
-        if not user:
+        if not auth_user:
             # Increment failed login attempt
             try:
                 failed_user = User.objects.get(email=email)
@@ -612,6 +618,11 @@ class MentorKYCDetailSerializer(serializers.ModelSerializer):
     # Reviewer info
     reviewed_by_name = serializers.CharField(source='reviewed_by.full_name', read_only=True, allow_null=True)
 
+    # User status & suspension info
+    user_status = serializers.CharField(source='user.status', read_only=True)
+    suspension_reason = serializers.CharField(source='user.suspension_reason', read_only=True)
+    suspended_at = serializers.DateTimeField(source='user.suspended_at', read_only=True)
+
     class Meta:
         model = MentorKYC
         fields = [
@@ -620,6 +631,7 @@ class MentorKYCDetailSerializer(serializers.ModelSerializer):
             'user_id', 'user_email', 'user_full_name', 'user_first_name', 'user_last_name',
             'user_phone_number', 'user_avatar', 'user_profile_picture_url',
             'user_date_of_birth', 'user_is_email_verified', 'user_created_at',
+            'user_status', 'suspension_reason', 'suspended_at',
             # Step 1: Personal Identification
             'government_id', 'government_id_type', 'government_id_verified',
             # Step 2: Ministry Background
@@ -670,6 +682,12 @@ class AdminInternalNoteSerializer(serializers.Serializer):
     """Serializer for adding internal notes to a KYC application."""
 
     note = serializers.CharField(required=True, min_length=1, max_length=1000)
+
+
+class UserSuspendSerializer(serializers.Serializer):
+    """Serializer for suspending a user."""
+
+    reason = serializers.CharField(required=True, min_length=10, max_length=1000)
 
 
 class ResendVerificationSerializer(serializers.Serializer):
@@ -990,6 +1008,11 @@ class MenteeKYCDetailSerializer(serializers.ModelSerializer):
     # Reviewer info
     reviewed_by_name = serializers.CharField(source='reviewed_by.full_name', read_only=True, allow_null=True)
 
+    # User status & suspension info
+    user_status = serializers.CharField(source='user.status', read_only=True)
+    suspension_reason = serializers.CharField(source='user.suspension_reason', read_only=True)
+    suspended_at = serializers.DateTimeField(source='user.suspended_at', read_only=True)
+
     class Meta:
         model = MenteeKYC
         fields = [
@@ -997,6 +1020,7 @@ class MenteeKYCDetailSerializer(serializers.ModelSerializer):
             # User info
             'user_id', 'user_email', 'user_full_name', 'user_first_name', 'user_last_name',
             'user_is_email_verified', 'user_created_at',
+            'user_status', 'suspension_reason', 'suspended_at',
             # Personal Information
             'display_picture', 'national_id_number', 'marital_status',
             'country', 'city', 'location',
@@ -1080,6 +1104,9 @@ class MentorKYCNewUpdateSerializer(serializers.Serializer):
         required=False
     )
 
+    # Contact (saved on User model)
+    phone_number = serializers.CharField(max_length=20, required=False)
+
     # Professional Profile
     profile_description = serializers.CharField(min_length=100, required=False)
     linkedin_url = serializers.URLField(required=False, allow_blank=True)
@@ -1113,7 +1140,15 @@ class MentorKYCNewUpdateSerializer(serializers.Serializer):
                 setattr(mentor_kyc, field, self.validated_data[field])
                 kyc_update_fields.append(field)
 
+        # Update User fields
+        if 'phone_number' in self.validated_data:
+            user.phone_number = self.validated_data['phone_number']
+            user_update_fields.append('phone_number')
+
         if kyc_update_fields:
             mentor_kyc.save(update_fields=kyc_update_fields)
+
+        if user_update_fields:
+            user.save(update_fields=user_update_fields)
 
         return mentor_kyc
