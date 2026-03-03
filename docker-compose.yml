@@ -1,0 +1,124 @@
+# =============================================================================
+# Eagles & Eaglets - Docker Compose
+# =============================================================================
+# Usage:
+#   Development:  docker-compose up
+#   Production:   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   Stop:         docker-compose down
+#   With volumes: docker-compose down -v  (removes database data)
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-eaglesneaglets_dev}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-eaglesneaglets_dev}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Redis (Cache, Sessions, Celery Broker)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Django Backend
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      target: development
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - static_data:/app/staticfiles
+      - media_data:/app/media
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=eaglesneagletsbackend.settings.local
+      - DB_HOST=db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Celery Worker (Background Tasks)
+  # ---------------------------------------------------------------------------
+  celery:
+    build:
+      context: .
+      target: development
+    restart: unless-stopped
+    command: celery -A eaglesneagletsbackend worker --loglevel=info
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=eaglesneagletsbackend.settings.local
+      - DB_HOST=db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Celery Beat (Scheduled Tasks)
+  # ---------------------------------------------------------------------------
+  celery-beat:
+    build:
+      context: .
+      target: development
+    restart: unless-stopped
+    command: celery -A eaglesneagletsbackend beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=eaglesneagletsbackend.settings.local
+      - DB_HOST=db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_data:
+  media_data:

@@ -1,0 +1,39 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Verify Your Email - Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2>Welcome to the Flight, {{ user.first_name }}!</h2>
+
+<p>
+    Thank you for registering with Eagles & Eaglets. We're excited to have you join our mentorship community.
+</p>
+
+<p>
+    Please verify your email address by clicking the button below:
+</p>
+
+<div style="text-align: center;">
+    <a href="{{ verification_url }}" class="button">Verify Email Address</a>
+</div>
+
+<div class="info-box">
+    <p><strong>Note:</strong> This verification link will expire in 24 hours.</p>
+</div>
+
+<p>
+    If the button doesn't work, you can copy and paste this link into your browser:
+</p>
+<p style="word-break: break-all; background-color: #F3F4F6; padding: 12px; border-radius: 4px; font-size: 14px;">
+    {{ verification_url }}
+</p>
+
+<p>
+    If you didn't create an account with Eagles & Eaglets, you can safely ignore this email.
+</p>
+
+<p>
+    Looking forward to your journey with us!<br>
+    <strong>The Eagles & Eaglets Team</strong>
+</p>
+{% endblock %}

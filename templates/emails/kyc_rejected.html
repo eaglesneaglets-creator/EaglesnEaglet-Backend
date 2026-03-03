@@ -1,0 +1,48 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Update Required: Your Mentor Application - Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2>Application Update Required</h2>
+
+<p>Hi {{ user.first_name }},</p>
+
+<p>
+    Thank you for your interest in becoming a mentor with Eagles & Eaglets. After careful consideration of your application, we regret to inform you that we are unable to approve it at this time.
+</p>
+
+<div class="info-box" style="background-color: #FEF2F2; border-left: 4px solid #EF4444;">
+    <p><strong>Reason:</strong></p>
+    <div style="margin-top: 10px;">{{ rejection_reason }}</div>
+</div>
+
+<p>
+    <strong>What are your options?</strong>
+</p>
+<ul style="color: #4B5563;">
+    <li>You may submit a new application after addressing the concerns mentioned above</li>
+    <li>If you believe this decision was made in error, please contact our support team</li>
+    <li>Consider joining as an Eaglet (mentee) to benefit from our community while preparing for future mentor opportunities</li>
+</ul>
+
+<p>
+    If you would like to apply again or have any questions, please visit:
+</p>
+
+<div style="text-align: center;">
+    <a href="{{ kyc_url }}" class="button">Submit New Application</a>
+</div>
+
+<p>
+    We appreciate your understanding and encourage you to continue your journey of growth and service. The door to mentorship remains open for the future.
+</p>
+
+<p>
+    If you have any questions, please reach out to our support team at <a href="mailto:{{ support_email }}">{{ support_email }}</a>.
+</p>
+
+<p>
+    With best wishes,<br>
+    <strong>The Eagles & Eaglets Team</strong>
+</p>
+{% endblock %}

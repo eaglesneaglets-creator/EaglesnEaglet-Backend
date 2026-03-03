@@ -253,6 +253,14 @@ PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY')
 
 
 # =============================================================================
+# GOOGLE OAUTH 2.0 SETTINGS
+# =============================================================================
+GOOGLE_OAUTH2_CLIENT_ID = config('GOOGLE_OAUTH2_CLIENT_ID')
+GOOGLE_OAUTH2_CLIENT_SECRET = config('GOOGLE_OAUTH2_CLIENT_SECRET')
+GOOGLE_OAUTH2_REDIRECT_URI = config('GOOGLE_OAUTH2_REDIRECT_URI')
+
+
+# =============================================================================
 # HEALTH CHECK SETTINGS
 # =============================================================================
 HEALTH_CHECK_TOKEN = config('HEALTH_CHECK_TOKEN', default=None)

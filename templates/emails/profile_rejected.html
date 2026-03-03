@@ -1,0 +1,51 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Update Required: Your Profile Application - Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2>Application Update</h2>
+
+<p>Hi {{ user.first_name }},</p>
+
+<p>
+    Thank you for your interest in joining Eagles & Eaglets as {% if role == 'mentor' %}an Eagle (Mentor){% else %}an Eaglet (Mentee){% endif %}.
+</p>
+
+<p>
+    After careful review, we regret to inform you that we are <strong>unable to approve your profile</strong> at this time.
+</p>
+
+{% if rejection_reason %}
+<div style="background-color: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; padding: 16px; margin: 24px 0;">
+    <p style="margin: 0; color: #991B1B;"><strong>Reason:</strong></p>
+    <p style="margin: 10px 0 0 0; color: #B91C1C;">{{ rejection_reason }}</p>
+</div>
+{% endif %}
+
+<p>
+    <strong>What are your options?</strong>
+</p>
+<ul style="color: #4B5563;">
+    <li>Review the feedback provided above</li>
+    <li>Make the necessary updates to your profile</li>
+    <li>Submit a new application when ready</li>
+    <li>Contact our support team if you have questions</li>
+</ul>
+
+<p>
+    We encourage you to address the concerns mentioned and reapply. Our team is here to help you through the process.
+</p>
+
+<div style="text-align: center;">
+    <a href="mailto:{{ support_email }}" class="button" style="background-color: #6B7280;">Contact Support</a>
+</div>
+
+<p>
+    We appreciate your understanding and hope to welcome you to our community soon.
+</p>
+
+<p>
+    Best regards,<br>
+    <strong>The Eagles & Eaglets Team</strong>
+</p>
+{% endblock %}

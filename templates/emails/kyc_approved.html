@@ -1,0 +1,55 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Congratulations! Your Application is Approved - Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2 style="color: #22C55E;">Welcome to the Eagle Family!</h2>
+
+<p>Hi {{ user.first_name }},</p>
+
+<p>
+    <strong>Congratulations!</strong> We are thrilled to inform you that your mentor application has been <span style="color: #22C55E; font-weight: bold;">approved</span>.
+</p>
+
+<div class="info-box" style="background-color: #F0FDF4; border-left: 4px solid #22C55E;">
+    <p><strong>What this means:</strong></p>
+    <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+        <li>You are now an official Eagle Mentor</li>
+        <li>You can create and manage your own Nest (mentorship group)</li>
+        <li>You can start connecting with Eaglets (mentees)</li>
+        <li>You have access to all mentor tools and resources</li>
+    </ul>
+</div>
+
+<p>
+    Ready to start your mentorship journey? Log in to access your mentor dashboard:
+</p>
+
+<div style="text-align: center;">
+    <a href="{{ dashboard_url }}" class="button" style="background-color: #22C55E;">Log In to Get Started</a>
+</div>
+
+<p>
+    <strong>Getting Started Tips:</strong>
+</p>
+<ul style="color: #4B5563;">
+    <li>Complete your mentor profile with your bio and expertise</li>
+    <li>Create your first Nest and define your mentorship focus</li>
+    <li>Browse available Eaglets looking for guidance</li>
+    <li>Set your availability for mentorship sessions</li>
+</ul>
+
+<p>
+    Thank you for your commitment to making a difference in the lives of young people. We are honored to have you as part of our community!
+</p>
+
+<p>
+    <em>"Those who hope in the Lord will renew their strength. They will soar on wings like eagles."</em>
+    <br><small>- Isaiah 40:31</small>
+</p>
+
+<p>
+    Soaring together,<br>
+    <strong>The Eagles & Eaglets Team</strong>
+</p>
+{% endblock %}

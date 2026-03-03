@@ -31,6 +31,8 @@ THIRD_PARTY_APPS = [
     'django_filters',
     'drf_spectacular',
     'django_redis',
+    'cloudinary_storage',
+    'cloudinary',
 ]
 
 LOCAL_APPS = [

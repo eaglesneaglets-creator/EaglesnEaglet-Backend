@@ -63,22 +63,35 @@ class PasswordStrengthValidator:
 
 def validate_phone_number(value):
     """
-    Validates Nigerian phone numbers.
-    Accepts formats: +234XXXXXXXXXX, 234XXXXXXXXXX, 0XXXXXXXXXX
+    Validates international phone numbers.
+    Accepts formats: +1234567890, 1234567890, +1 234 567 890, +1-234-567-890, etc.
+    Supports 7-15 digits with optional country code (+) and separators (spaces, dashes, dots).
     """
-    # Remove spaces and dashes
-    cleaned = re.sub(r'[\s\-]', '', value)
+    # Remove common separators for digit counting
+    cleaned = re.sub(r'[\s\-\.\(\)]', '', value)
 
-    # Nigerian phone number patterns
-    patterns = [
-        r'^\+234[789][01]\d{8}$',  # +234 format
-        r'^234[789][01]\d{8}$',    # 234 format
-        r'^0[789][01]\d{8}$',       # 0 format
-    ]
+    # Remove leading + for digit counting
+    digits_only = cleaned.lstrip('+')
 
-    if not any(re.match(pattern, cleaned) for pattern in patterns):
+    # Check total digit count (international numbers: 7-15 digits)
+    if not digits_only.isdigit():
         raise ValidationError(
-            _('Enter a valid Nigerian phone number.'),
+            _('Phone number can only contain digits and separators (+, -, spaces, dots).'),
+            code='invalid_phone',
+        )
+
+    digit_count = len(digits_only)
+    if digit_count < 7 or digit_count > 15:
+        raise ValidationError(
+            _('Enter a valid phone number (7-15 digits).'),
+            code='invalid_phone',
+        )
+
+    # Validate the format pattern
+    pattern = r'^\+?[0-9]{1,4}[-.\s]?(\(?\d{1,4}\)?[-.\s]?)?[\d\s.\-]{4,14}$'
+    if not re.match(pattern, value):
+        raise ValidationError(
+            _('Enter a valid phone number (e.g., +1 234 567 8900).'),
             code='invalid_phone',
         )
 
