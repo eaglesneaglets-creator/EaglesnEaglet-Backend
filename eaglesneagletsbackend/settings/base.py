@@ -303,3 +303,27 @@ LOGGING = {
         },
     },
 }
+
+
+# =============================================================================
+# Security Configuration
+# =============================================================================
+# Centralized security thresholds — configurable via environment variables
+# without code changes. All values have safe defaults.
+
+SECURITY = {
+    # Account lockout after N consecutive failed login attempts
+    'MAX_FAILED_LOGIN_ATTEMPTS': int(os.environ.get('MAX_FAILED_LOGIN_ATTEMPTS', 5)),
+
+    # Duration (in minutes) for which an account stays locked after max failures
+    'LOCKOUT_DURATION_MINUTES': int(os.environ.get('LOCKOUT_DURATION_MINUTES', 30)),
+
+    # Email verification token validity window (in hours)
+    'EMAIL_VERIFICATION_EXPIRY_HOURS': int(os.environ.get('EMAIL_VERIFICATION_EXPIRY_HOURS', 24)),
+
+    # Password reset token validity window (in minutes)
+    'PASSWORD_RESET_EXPIRY_MINUTES': int(os.environ.get('PASSWORD_RESET_EXPIRY_MINUTES', 15)),
+
+    # OAuth state nonce validity window (in seconds)
+    'OAUTH_STATE_TIMEOUT_SECONDS': int(os.environ.get('OAUTH_STATE_TIMEOUT_SECONDS', 600)),
+}

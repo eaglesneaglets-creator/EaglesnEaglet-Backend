@@ -83,6 +83,7 @@ urlpatterns = [
     path('admin/kyc/<uuid:kyc_id>/approve/', views.AdminKYCApproveView.as_view(), name='admin-kyc-approve'),
     path('admin/kyc/<uuid:kyc_id>/reject/', views.AdminKYCRejectView.as_view(), name='admin-kyc-reject'),
     path('admin/kyc/<uuid:kyc_id>/request-changes/', views.AdminKYCRequestChangesView.as_view(), name='admin-kyc-request-changes'),
+    path('admin/kyc/<uuid:kyc_id>/start-review/', views.AdminKYCStartReviewView.as_view(), name='admin-kyc-start-review'),
     path('admin/kyc/<uuid:kyc_id>/notes/', views.AdminKYCNotesView.as_view(), name='admin-kyc-notes'),
 
     # =========================================================================

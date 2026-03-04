@@ -6,8 +6,11 @@ Custom user model with comprehensive security features and role-based access.
 
 import uuid
 import secrets
+import logging
+from django.conf import settings as django_settings
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
-from django.db import models
+from django.db import models, transaction
+from django.db.models import F
 from django.utils import timezone
 from django.core.validators import RegexValidator
 from core.mixins.timestamp import TimestampMixin
@@ -210,22 +213,40 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
         return False
 
     def increment_failed_login(self):
-        """Increment failed login counter and lock if necessary."""
-        self.failed_login_attempts += 1
-        self.last_failed_login = timezone.now()
+        """Atomically increment failed login counter and lock if necessary.
 
-        # Lock account after 5 failed attempts for 30 minutes
-        if self.failed_login_attempts >= 5:
-            self.lockout_until = timezone.now() + timezone.timedelta(minutes=30)
+        Uses Django's F() expression for a database-level atomic increment,
+        preventing race conditions under concurrent login attempts.
+        """
+        security = getattr(django_settings, 'SECURITY', {})
+        max_attempts = security.get('MAX_FAILED_LOGIN_ATTEMPTS', 5)
+        lockout_minutes = security.get('LOCKOUT_DURATION_MINUTES', 30)
 
-        self.save(update_fields=['failed_login_attempts', 'last_failed_login', 'lockout_until'])
+        with transaction.atomic():
+            # Atomic increment at the database level — prevents race conditions
+            User.objects.filter(pk=self.pk).update(
+                failed_login_attempts=F('failed_login_attempts') + 1,
+                last_failed_login=timezone.now(),
+            )
+            # Re-read the updated value from the database (not from stale Python object)
+            self.refresh_from_db(fields=['failed_login_attempts', 'last_failed_login'])
+
+            # Check if lockout threshold has been reached
+            if self.failed_login_attempts >= max_attempts:
+                self.lockout_until = timezone.now() + timezone.timedelta(minutes=lockout_minutes)
+                self.save(update_fields=['lockout_until'])
 
     def reset_failed_login(self):
         """Reset failed login counter on successful login."""
+        User.objects.filter(pk=self.pk).update(
+            failed_login_attempts=0,
+            last_failed_login=None,
+            lockout_until=None,
+        )
+        # Sync the Python object to match the database
         self.failed_login_attempts = 0
         self.last_failed_login = None
         self.lockout_until = None
-        self.save(update_fields=['failed_login_attempts', 'last_failed_login', 'lockout_until'])
 
     def generate_email_verification_token(self):
         """Generate a secure email verification token."""
@@ -236,10 +257,13 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
 
     def verify_email(self, token):
         """Verify email with token."""
+        security = getattr(django_settings, 'SECURITY', {})
+        expiry_hours = security.get('EMAIL_VERIFICATION_EXPIRY_HOURS', 24)
+
         if self.email_verification_token == token:
-            # Check if token is not expired (24 hours)
+            # Check if token is not expired
             if self.email_verification_sent_at:
-                expiry = self.email_verification_sent_at + timezone.timedelta(hours=24)
+                expiry = self.email_verification_sent_at + timezone.timedelta(hours=expiry_hours)
                 if timezone.now() > expiry:
                     return False
 
@@ -259,10 +283,13 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
 
     def reset_password(self, token, new_password):
         """Reset password with token."""
+        security = getattr(django_settings, 'SECURITY', {})
+        expiry_minutes = security.get('PASSWORD_RESET_EXPIRY_MINUTES', 15)
+
         if self.password_reset_token == token:
-            # Check if token is not expired (15 minutes for security)
+            # Check if token is not expired
             if self.password_reset_sent_at:
-                expiry = self.password_reset_sent_at + timezone.timedelta(minutes=15)
+                expiry = self.password_reset_sent_at + timezone.timedelta(minutes=expiry_minutes)
                 if timezone.now() > expiry:
                     return False
 
@@ -703,31 +730,38 @@ class MentorKYC(TimestampMixin):
         return False
 
     def approve(self, reviewer):
-        """Approve the KYC application."""
-        self.status = self.VerificationStatus.APPROVED
-        self.reviewed_at = timezone.now()
-        self.reviewed_by = reviewer
-        self.save(update_fields=['status', 'reviewed_at', 'reviewed_by'])
+        """Approve the KYC application.
 
-        # Update user status to active
-        self.user.status = User.Status.ACTIVE
-        self.user.save(update_fields=['status'])
+        Atomically updates both the KYC record and user status to prevent
+        inconsistent state if one save succeeds but the other fails.
+        """
+        with transaction.atomic():
+            self.status = self.VerificationStatus.APPROVED
+            self.reviewed_at = timezone.now()
+            self.reviewed_by = reviewer
+            self.save(update_fields=['status', 'reviewed_at', 'reviewed_by'])
+
+            # Update user status to active
+            self.user.status = User.Status.ACTIVE
+            self.user.save(update_fields=['status'])
 
     def reject(self, reviewer, reason):
         """Reject the KYC application."""
-        self.status = self.VerificationStatus.REJECTED
-        self.reviewed_at = timezone.now()
-        self.reviewed_by = reviewer
-        self.rejection_reason = reason
-        self.save(update_fields=['status', 'reviewed_at', 'reviewed_by', 'rejection_reason'])
+        with transaction.atomic():
+            self.status = self.VerificationStatus.REJECTED
+            self.reviewed_at = timezone.now()
+            self.reviewed_by = reviewer
+            self.rejection_reason = reason
+            self.save(update_fields=['status', 'reviewed_at', 'reviewed_by', 'rejection_reason'])
 
     def request_changes(self, reviewer, notes):
         """Request changes to the KYC application."""
-        self.status = self.VerificationStatus.REQUIRES_CHANGES
-        self.reviewed_at = timezone.now()
-        self.reviewed_by = reviewer
-        self.review_notes = notes
-        self.save(update_fields=['status', 'reviewed_at', 'reviewed_by', 'review_notes'])
+        with transaction.atomic():
+            self.status = self.VerificationStatus.REQUIRES_CHANGES
+            self.reviewed_at = timezone.now()
+            self.reviewed_by = reviewer
+            self.review_notes = notes
+            self.save(update_fields=['status', 'reviewed_at', 'reviewed_by', 'review_notes'])
 
 
 class EagletProfile(TimestampMixin):
@@ -1075,28 +1109,35 @@ class MenteeKYC(TimestampMixin):
         return False
 
     def approve(self, reviewer):
-        """Approve the KYC application."""
-        self.status = self.VerificationStatus.APPROVED
-        self.reviewed_at = timezone.now()
-        self.reviewed_by = reviewer
-        self.save(update_fields=['status', 'reviewed_at', 'reviewed_by'])
+        """Approve the KYC application.
 
-        # Update user status to active
-        self.user.status = User.Status.ACTIVE
-        self.user.save(update_fields=['status'])
+        Atomically updates both the KYC record and user status to prevent
+        inconsistent state if one save succeeds but the other fails.
+        """
+        with transaction.atomic():
+            self.status = self.VerificationStatus.APPROVED
+            self.reviewed_at = timezone.now()
+            self.reviewed_by = reviewer
+            self.save(update_fields=['status', 'reviewed_at', 'reviewed_by'])
+
+            # Update user status to active
+            self.user.status = User.Status.ACTIVE
+            self.user.save(update_fields=['status'])
 
     def reject(self, reviewer, reason):
         """Reject the KYC application."""
-        self.status = self.VerificationStatus.REJECTED
-        self.reviewed_at = timezone.now()
-        self.reviewed_by = reviewer
-        self.rejection_reason = reason
-        self.save(update_fields=['status', 'reviewed_at', 'reviewed_by', 'rejection_reason'])
+        with transaction.atomic():
+            self.status = self.VerificationStatus.REJECTED
+            self.reviewed_at = timezone.now()
+            self.reviewed_by = reviewer
+            self.rejection_reason = reason
+            self.save(update_fields=['status', 'reviewed_at', 'reviewed_by', 'rejection_reason'])
 
     def request_changes(self, reviewer, notes):
         """Request changes to the KYC application."""
-        self.status = self.VerificationStatus.REQUIRES_CHANGES
-        self.reviewed_at = timezone.now()
-        self.reviewed_by = reviewer
-        self.review_notes = notes
-        self.save(update_fields=['status', 'reviewed_at', 'reviewed_by', 'review_notes'])
+        with transaction.atomic():
+            self.status = self.VerificationStatus.REQUIRES_CHANGES
+            self.reviewed_at = timezone.now()
+            self.reviewed_by = reviewer
+            self.review_notes = notes
+            self.save(update_fields=['status', 'reviewed_at', 'reviewed_by', 'review_notes'])

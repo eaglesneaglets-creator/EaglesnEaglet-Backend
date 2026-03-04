@@ -194,33 +194,36 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        from django.db import transaction
+
         validated_data.pop('password_confirm')
         validated_data.pop('terms_accepted')
         password = validated_data.pop('password')
         role = validated_data.get('role')
 
-        user = User.objects.create_user(
-            password=password,
-            terms_accepted_at=timezone.now(),
-            privacy_accepted_at=timezone.now(),
-            **validated_data
-        )
+        with transaction.atomic():
+            user = User.objects.create_user(
+                password=password,
+                terms_accepted_at=timezone.now(),
+                privacy_accepted_at=timezone.now(),
+                **validated_data
+            )
 
-        # Generate email verification token
-        user.generate_email_verification_token()
+            # Generate email verification token
+            user.generate_email_verification_token()
 
-        # Create user profile
-        UserProfile.objects.create(user=user)
+            # Create user profile
+            UserProfile.objects.create(user=user)
 
-        # Create role-specific KYC profile (both require admin approval)
-        if role == User.Role.EAGLE:
-            # Create MentorKYC for Eagle (mentor) users
-            MentorKYC.objects.create(user=user)
-        elif role == User.Role.EAGLET:
-            # Create MenteeKYC for Eaglet (mentee) users (NEW: requires approval)
-            MenteeKYC.objects.create(user=user)
-            # Also create legacy EagletProfile for backward compatibility
-            EagletProfile.objects.create(user=user)
+            # Create role-specific KYC profile (both require admin approval)
+            if role == User.Role.EAGLE:
+                # Create MentorKYC for Eagle (mentor) users
+                MentorKYC.objects.create(user=user)
+            elif role == User.Role.EAGLET:
+                # Create MenteeKYC for Eaglet (mentee) users (NEW: requires approval)
+                MenteeKYC.objects.create(user=user)
+                # Also create legacy EagletProfile for backward compatibility
+                EagletProfile.objects.create(user=user)
 
         return user
 
@@ -561,16 +564,25 @@ class MentorKYCListSerializer(serializers.ModelSerializer):
     days_pending = serializers.SerializerMethodField()
     priority = serializers.SerializerMethodField()
 
+    display_picture_url = serializers.SerializerMethodField()
+
     class Meta:
         model = MentorKYC
         fields = [
             'id', 'user_id', 'user_email', 'user_full_name',
             'user_avatar', 'user_profile_picture_url',
+            'display_picture_url',
             'status', 'current_step', 'completion_percentage',
             'area_of_expertise', 'church_name',
+            'location', 'mentorship_types',
             'submitted_at', 'days_pending', 'priority',
             'created_at',
         ]
+
+    def get_display_picture_url(self, obj):
+        if obj.display_picture:
+            return obj.display_picture.url if hasattr(obj.display_picture, 'url') else str(obj.display_picture)
+        return None
 
     def get_days_pending(self, obj):
         """Calculate days since submission."""
@@ -623,6 +635,10 @@ class MentorKYCDetailSerializer(serializers.ModelSerializer):
     suspension_reason = serializers.CharField(source='user.suspension_reason', read_only=True)
     suspended_at = serializers.DateTimeField(source='user.suspended_at', read_only=True)
 
+    # Expose display_picture and cv as URL strings for frontend
+    display_picture_url = serializers.SerializerMethodField()
+    cv_url = serializers.SerializerMethodField()
+
     class Meta:
         model = MentorKYC
         fields = [
@@ -632,15 +648,20 @@ class MentorKYCDetailSerializer(serializers.ModelSerializer):
             'user_phone_number', 'user_avatar', 'user_profile_picture_url',
             'user_date_of_birth', 'user_is_email_verified', 'user_created_at',
             'user_status', 'suspension_reason', 'suspended_at',
-            # Step 1: Personal Identification
+            # NEW: Personal Information (PM Requirements)
+            'display_picture', 'display_picture_url',
+            'location', 'national_id_number', 'marital_status', 'employment_status',
+            # NEW: Professional Profile (PM Requirements)
+            'profile_description', 'cv', 'cv_url', 'mentorship_types',
+            # LEGACY: Personal Identification
             'government_id', 'government_id_type', 'government_id_verified',
-            # Step 2: Ministry Background
+            # LEGACY: Ministry Background
             'church_name', 'church_role', 'years_of_service',
             'spiritual_testimony', 'recommendation_letter',
-            # Step 3: Professional Experience
+            # LEGACY: Professional Experience
             'area_of_expertise', 'current_occupation',
             'linkedin_url', 'mentorship_interests',
-            # Step 4: Consent
+            # LEGACY: Consent
             'background_check_consent', 'code_of_conduct_agreed',
             'statement_of_faith_agreed', 'digital_signature', 'consent_date',
             # Status & Review
@@ -656,6 +677,18 @@ class MentorKYCDetailSerializer(serializers.ModelSerializer):
             from django.utils import timezone
             delta = timezone.now() - obj.submitted_at
             return delta.days
+        return None
+
+    def get_display_picture_url(self, obj):
+        """Get the full URL for the display picture."""
+        if obj.display_picture:
+            return obj.display_picture.url if hasattr(obj.display_picture, 'url') else str(obj.display_picture)
+        return None
+
+    def get_cv_url(self, obj):
+        """Get the full URL for the CV."""
+        if obj.cv:
+            return obj.cv.url if hasattr(obj.cv, 'url') else str(obj.cv)
         return None
 
 
