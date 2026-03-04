@@ -1347,12 +1347,21 @@ class GoogleOAuthLoginView(APIView):
     Initiate Google OAuth 2.0 login flow.
     Redirects user to Google consent screen.
 
+    The state parameter carries a JSON payload with a random nonce and the
+    requested role, encoded in base64. The nonce is stored in the Django cache
+    and verified in the callback to prevent CSRF and replay attacks.
+
     GET /api/v1/auth/google/login/
     """
 
     permission_classes = [AllowAny]
 
     def get(self, request):
+        import json
+        import base64
+        import secrets as _secrets
+        from django.core.cache import cache
+
         client_id = getattr(settings, 'GOOGLE_OAUTH2_CLIENT_ID', '')
         redirect_uri = getattr(settings, 'GOOGLE_OAUTH2_REDIRECT_URI', '')
 
@@ -1366,10 +1375,22 @@ class GoogleOAuthLoginView(APIView):
                 }
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # Get role from query params (will be passed back via state)
+        # Get role from query params
         role = request.GET.get('role', 'eaglet')
         if role not in ['eagle', 'eaglet']:
             role = 'eaglet'
+
+        # Generate CSRF nonce and store in cache for verification
+        csrf_nonce = _secrets.token_urlsafe(32)
+        security = getattr(settings, 'SECURITY', {})
+        state_timeout = security.get('OAUTH_STATE_TIMEOUT_SECONDS', 600)
+
+        cache_key = f'oauth_state:{csrf_nonce}'
+        cache.set(cache_key, {'role': role, 'nonce': csrf_nonce}, timeout=state_timeout)
+
+        # Encode nonce + role into the state parameter (base64 JSON)
+        state_data = json.dumps({'nonce': csrf_nonce, 'role': role})
+        state_encoded = base64.urlsafe_b64encode(state_data.encode()).decode()
 
         # Build Google OAuth URL
         params = {
@@ -1379,7 +1400,7 @@ class GoogleOAuthLoginView(APIView):
             'scope': 'email profile openid',
             'access_type': 'offline',
             'prompt': 'consent',
-            'state': role,  # Pass role in state parameter
+            'state': state_encoded,
         }
 
         google_auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
@@ -1403,8 +1424,12 @@ class GoogleOAuthCallbackView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        import json
+        import base64
+        from django.core.cache import cache
+
         code = request.data.get('code')
-        role = request.data.get('role', 'eaglet')
+        state_encoded = request.data.get('state', '')
 
         if not code:
             return Response({
@@ -1415,6 +1440,39 @@ class GoogleOAuthCallbackView(APIView):
                     'message': 'Authorization code is required.'
                 }
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Verify OAuth state parameter (CSRF + replay protection)
+        role = 'eaglet'  # Default fallback
+        if state_encoded:
+            try:
+                state_data = json.loads(base64.urlsafe_b64decode(state_encoded))
+                nonce = state_data.get('nonce', '')
+                role = state_data.get('role', 'eaglet')
+
+                # Validate nonce exists in cache
+                cache_key = f'oauth_state:{nonce}'
+                cached_state = cache.get(cache_key)
+                if not cached_state or cached_state.get('nonce') != nonce:
+                    logger.warning("OAuth state nonce invalid or expired")
+                    return Response({
+                        'success': False,
+                        'error': {
+                            'code': 400,
+                            'type': 'InvalidState',
+                            'message': 'OAuth session expired or invalid. Please try again.'
+                        }
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                # Delete nonce to prevent replay attacks
+                cache.delete(cache_key)
+
+            except (json.JSONDecodeError, ValueError, Exception) as exc:
+                logger.warning("OAuth state decode failed: %s", exc)
+                # Fall through with default role — allow backward compat during rollout
+                role = request.data.get('role', 'eaglet')
+        else:
+            # Backward compatibility: if no state param, use role from request body
+            role = request.data.get('role', 'eaglet')
 
         # Validate role
         if role not in ['eagle', 'eaglet']:
@@ -1449,7 +1507,7 @@ class GoogleOAuthCallbackView(APIView):
             )
 
             if token_response.status_code != 200:
-                logger.error(f"Google token exchange failed: {token_response.text}")
+                logger.error("Google token exchange failed: %s", token_response.text)
                 return Response({
                     'success': False,
                     'error': {
@@ -1463,7 +1521,7 @@ class GoogleOAuthCallbackView(APIView):
             access_token = token_data.get('access_token')
 
         except requests.RequestException as e:
-            logger.error(f"Google OAuth request failed: {e}")
+            logger.error("Google OAuth request failed: %s", e)
             return Response({
                 'success': False,
                 'error': {
@@ -1482,7 +1540,7 @@ class GoogleOAuthCallbackView(APIView):
             )
 
             if user_info_response.status_code != 200:
-                logger.error(f"Google user info failed: {user_info_response.text}")
+                logger.error("Google user info failed: %s", user_info_response.text)
                 return Response({
                     'success': False,
                     'error': {
@@ -1495,7 +1553,7 @@ class GoogleOAuthCallbackView(APIView):
             user_info = user_info_response.json()
 
         except requests.RequestException as e:
-            logger.error(f"Google user info request failed: {e}")
+            logger.error("Google user info request failed: %s", e)
             return Response({
                 'success': False,
                 'error': {
@@ -1618,7 +1676,7 @@ class AdminKYCListView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        from django.db.models import Q
+        from django.db.models import Q, Count, Case, When
 
         role_filter = request.GET.get('role', 'all')
         status_filter = request.GET.get('status')
@@ -1699,33 +1757,33 @@ class AdminKYCListView(APIView):
         end = start + per_page
         paginated = all_applications[start:end]
 
-        # Get summary counts for both roles
+        # Get summary counts using aggregate (2 queries instead of 14)
+        def _get_status_counts(model):
+            """Single-query aggregation for all status counts."""
+            return model.objects.aggregate(
+                total=Count('id'),
+                pending=Count(Case(When(status__in=['submitted', 'under_review'], then=1))),
+                approved=Count(Case(When(status='approved', then=1))),
+                rejected=Count(Case(When(status='rejected', then=1))),
+                requires_changes=Count(Case(When(status='requires_changes', then=1))),
+            )
+
+        mentor_counts = _get_status_counts(MentorKYC)
+        mentee_counts = _get_status_counts(MenteeKYC)
+
         summary = {
-            'total': MentorKYC.objects.count() + MenteeKYC.objects.count(),
-            'pending': (
-                MentorKYC.objects.filter(status__in=['submitted', 'under_review']).count() +
-                MenteeKYC.objects.filter(status__in=['submitted', 'under_review']).count()
-            ),
-            'approved': (
-                MentorKYC.objects.filter(status='approved').count() +
-                MenteeKYC.objects.filter(status='approved').count()
-            ),
-            'rejected': (
-                MentorKYC.objects.filter(status='rejected').count() +
-                MenteeKYC.objects.filter(status='rejected').count()
-            ),
-            'requires_changes': (
-                MentorKYC.objects.filter(status='requires_changes').count() +
-                MenteeKYC.objects.filter(status='requires_changes').count()
-            ),
-            # Role-specific counts
+            'total': mentor_counts['total'] + mentee_counts['total'],
+            'pending': mentor_counts['pending'] + mentee_counts['pending'],
+            'approved': mentor_counts['approved'] + mentee_counts['approved'],
+            'rejected': mentor_counts['rejected'] + mentee_counts['rejected'],
+            'requires_changes': mentor_counts['requires_changes'] + mentee_counts['requires_changes'],
             'mentors': {
-                'total': MentorKYC.objects.count(),
-                'pending': MentorKYC.objects.filter(status__in=['submitted', 'under_review']).count(),
+                'total': mentor_counts['total'],
+                'pending': mentor_counts['pending'],
             },
             'mentees': {
-                'total': MenteeKYC.objects.count(),
-                'pending': MenteeKYC.objects.filter(status__in=['submitted', 'under_review']).count(),
+                'total': mentee_counts['total'],
+                'pending': mentee_counts['pending'],
             },
         }
 
@@ -1751,6 +1809,11 @@ class AdminKYCDetailView(APIView):
     GET /api/v1/admin/kyc/{kyc_id}/
     Query params:
         - role: 'mentor' or 'mentee' (required to identify which model to query)
+
+    Note: This endpoint is read-only. To transition a KYC application from
+    'submitted' to 'under_review', use the POST /admin/kyc/{kyc_id}/start-review/
+    endpoint instead. GET requests must not have write side-effects per HTTP
+    semantics (RFC 7231 §4.2.1).
     """
 
     permission_classes = [IsAuthenticated, IsAdmin]
@@ -1771,11 +1834,6 @@ class AdminKYCDetailView(APIView):
                     }
                 }, status=status.HTTP_404_NOT_FOUND)
 
-            # Mark as under review if just submitted
-            if kyc.status == 'submitted':
-                kyc.status = 'under_review'
-                kyc.save(update_fields=['status'])
-
             data = MenteeKYCDetailSerializer(kyc).data
             data['role'] = 'mentee'
             data['role_display'] = 'Eaglet (Mentee)'
@@ -1792,11 +1850,6 @@ class AdminKYCDetailView(APIView):
                     }
                 }, status=status.HTTP_404_NOT_FOUND)
 
-            # Mark as under review if just submitted
-            if kyc.status == 'submitted':
-                kyc.status = 'under_review'
-                kyc.save(update_fields=['status'])
-
             data = MentorKYCDetailSerializer(kyc).data
             data['role'] = 'mentor'
             data['role_display'] = 'Eagle (Mentor)'
@@ -1804,6 +1857,82 @@ class AdminKYCDetailView(APIView):
         return Response({
             'success': True,
             'data': data
+        })
+
+
+class AdminKYCStartReviewView(APIView):
+    """
+    Explicitly start reviewing a KYC application.
+
+    Transitions a KYC application from 'submitted' to 'under_review' status.
+    This is the proper POST-based replacement for the previous auto-transition
+    that was incorrectly triggered on GET requests.
+
+    POST /api/v1/admin/kyc/{kyc_id}/start-review/
+    Body params:
+        - role: 'mentor' or 'mentee' (required)
+    """
+
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request, kyc_id):
+        role = request.data.get('role', 'mentor')
+
+        if role == 'mentee':
+            try:
+                kyc = MenteeKYC.objects.select_related('user').get(id=kyc_id)
+            except MenteeKYC.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': {
+                        'code': 404,
+                        'type': 'NotFound',
+                        'message': 'Mentee KYC application not found.'
+                    }
+                }, status=status.HTTP_404_NOT_FOUND)
+        else:
+            try:
+                kyc = MentorKYC.objects.select_related('user').get(id=kyc_id)
+            except MentorKYC.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'error': {
+                        'code': 404,
+                        'type': 'NotFound',
+                        'message': 'Mentor KYC application not found.'
+                    }
+                }, status=status.HTTP_404_NOT_FOUND)
+
+        # Only transition from 'submitted' status
+        if kyc.status != 'submitted':
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 400,
+                    'type': 'InvalidStatusTransition',
+                    'message': (
+                        f'Cannot start review: application status is '
+                        f'"{kyc.get_status_display()}" (expected "Submitted").'
+                    )
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        kyc.status = 'under_review'
+        kyc.save(update_fields=['status'])
+
+        logger.info(
+            "KYC %s transitioned to under_review by admin %s",
+            kyc_id, request.user.email,
+        )
+
+        return Response({
+            'success': True,
+            'data': {
+                'id': str(kyc.id),
+                'status': kyc.status,
+                'status_display': kyc.get_status_display(),
+                'message': 'Application is now under review.',
+            }
         })
 
 
