@@ -109,11 +109,17 @@ def test_get_comments_returns_only_top_level(db, post, eagle, eaglet, top_commen
 
 def test_get_comments_prefetches_replies(db, post, eagle, eaglet, top_comment):
     """get_comments prefetches replies so accessing them triggers no extra queries."""
+    from django.test.utils import CaptureQueriesContext
+    from django.db import connection
+
     NestPostComment.objects.create(
         post=post, author=eagle, content="Reply", parent=top_comment
     )
     comments = list(CommunityService.get_comments(str(post.id)))
-    assert len(list(comments[0].replies.all())) == 1
+    with CaptureQueriesContext(connection) as ctx:
+        replies = list(comments[0].replies.all())
+    assert len(replies) == 1
+    assert len(ctx) == 0, f"Expected 0 queries (prefetched), got {len(ctx)}"
 
 
 def test_add_reply_creates_reply(db, top_comment, eagle):
