@@ -135,3 +135,54 @@ def test_add_reply_prevents_nested_threading(db, top_comment, eagle, eaglet):
     reply = CommunityService.add_reply(str(top_comment.id), eagle, "First reply")
     with pytest.raises(ValidationError):
         CommunityService.add_reply(str(reply.id), eaglet, "Should not work")
+
+
+from rest_framework.test import APIClient
+from apps.nests.models import NestMembership
+
+
+@pytest.fixture
+def api_client():
+    return APIClient()
+
+
+@pytest.fixture
+def member(db, nest, eaglet):
+    NestMembership.objects.create(nest=nest, user=eaglet)
+    return eaglet
+
+
+def test_like_endpoint_toggles(db, api_client, nest, post, member):
+    """POST /nests/{nest_pk}/posts/{pk}/like/ toggles like."""
+    api_client.force_authenticate(user=member)
+    url = f"/api/v1/nests/{nest.id}/posts/{post.id}/like/"
+    r = api_client.post(url)
+    assert r.status_code == 200
+    assert r.data["liked"] is True
+    assert r.data["likes_count"] == 1
+    r2 = api_client.post(url)
+    assert r2.data["liked"] is False
+    assert r2.data["likes_count"] == 0
+
+
+def test_comment_list_endpoint_returns_top_level_with_replies(
+    db, api_client, nest, post, member, top_comment, eagle
+):
+    """GET /nests/{pk}/posts/{pk}/comment-list/ returns top-level comments with replies."""
+    NestPostComment.objects.create(
+        post=post, author=eagle, content="Reply", parent=top_comment
+    )
+    api_client.force_authenticate(user=member)
+    r = api_client.get(f"/api/v1/nests/{nest.id}/posts/{post.id}/comment-list/")
+    assert r.status_code == 200
+    assert len(r.data) == 1
+    assert len(r.data[0]["replies"]) == 1
+
+
+def test_add_reply_endpoint(db, api_client, nest, post, member, top_comment):
+    """POST /nests/{nest_pk}/posts/{pk}/comments/{comment_pk}/replies/ adds a reply."""
+    api_client.force_authenticate(user=member)
+    url = f"/api/v1/nests/{nest.id}/posts/{post.id}/comments/{top_comment.id}/replies/"
+    r = api_client.post(url, {"content": "My reply"}, format="json")
+    assert r.status_code == 201
+    assert r.data["data"]["content"] == "My reply"
