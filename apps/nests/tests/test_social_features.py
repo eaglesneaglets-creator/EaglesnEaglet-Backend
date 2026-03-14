@@ -53,3 +53,21 @@ def test_comment_can_have_parent(db, top_comment, eagle):
     )
     assert reply.parent == top_comment
     assert list(top_comment.replies.all()) == [reply]
+
+
+from django.db import IntegrityError
+from apps.nests.models import NestPostLike
+
+
+def test_postlike_can_be_created(db, post, eaglet):
+    """A user can like a post."""
+    like = NestPostLike.objects.create(post=post, user=eaglet)
+    assert like.post == post
+    assert like.user == eaglet
+
+
+def test_postlike_unique_per_user_per_post(db, post, eaglet):
+    """A user cannot like the same post twice."""
+    NestPostLike.objects.create(post=post, user=eaglet)
+    with pytest.raises(IntegrityError):
+        NestPostLike.objects.create(post=post, user=eaglet)

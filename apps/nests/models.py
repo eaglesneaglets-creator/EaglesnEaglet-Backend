@@ -261,6 +261,24 @@ class NestPostComment(TimestampMixin, models.Model):
         return f"Comment by {self.author} on {self.post_id}"
 
 
+class NestPostLike(models.Model):
+    """Tracks which users liked a NestPost."""
+
+    post = models.ForeignKey(NestPost, on_delete=models.CASCADE, related_name="likes")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="nest_likes"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "nest_post_likes"
+        unique_together = ("post", "user")
+        # unique_together creates a composite index covering filter(post=post, user=user)
+
+    def __str__(self) -> str:
+        return f"{self.user} liked {self.post_id}"
+
+
 class NestResource(TimestampMixin, models.Model):
     """A shared file/link in the Nest resource library."""
 
