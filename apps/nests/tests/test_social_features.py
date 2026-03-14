@@ -71,3 +71,61 @@ def test_postlike_unique_per_user_per_post(db, post, eaglet):
     NestPostLike.objects.create(post=post, user=eaglet)
     with pytest.raises(IntegrityError):
         NestPostLike.objects.create(post=post, user=eaglet)
+
+
+from django.db.models import Prefetch
+from rest_framework.exceptions import ValidationError
+from apps.nests.services import CommunityService
+
+
+def test_toggle_like_creates_like_and_increments_count(db, post, eaglet):
+    """First toggle_like creates a like and bumps likes_count."""
+    result = CommunityService.toggle_like(str(post.id), eaglet)
+    post.refresh_from_db()
+    assert result["liked"] is True
+    assert result["likes_count"] == 1
+    assert post.likes_count == 1
+
+
+def test_toggle_like_removes_like_and_decrements_count(db, post, eaglet):
+    """Second toggle_like removes the like and decrements likes_count."""
+    CommunityService.toggle_like(str(post.id), eaglet)
+    result = CommunityService.toggle_like(str(post.id), eaglet)
+    post.refresh_from_db()
+    assert result["liked"] is False
+    assert result["likes_count"] == 0
+    assert post.likes_count == 0
+
+
+def test_get_comments_returns_only_top_level(db, post, eagle, eaglet, top_comment):
+    """get_comments excludes replies (parent is not None)."""
+    NestPostComment.objects.create(
+        post=post, author=eagle, content="Reply", parent=top_comment
+    )
+    comments = list(CommunityService.get_comments(str(post.id)))
+    assert len(comments) == 1
+    assert comments[0].id == top_comment.id
+
+
+def test_get_comments_prefetches_replies(db, post, eagle, eaglet, top_comment):
+    """get_comments prefetches replies so accessing them triggers no extra queries."""
+    NestPostComment.objects.create(
+        post=post, author=eagle, content="Reply", parent=top_comment
+    )
+    comments = list(CommunityService.get_comments(str(post.id)))
+    assert len(list(comments[0].replies.all())) == 1
+
+
+def test_add_reply_creates_reply(db, top_comment, eagle):
+    """add_reply creates a NestPostComment with parent set."""
+    reply = CommunityService.add_reply(str(top_comment.id), eagle, "My reply")
+    assert reply.parent == top_comment
+    assert reply.author == eagle
+    assert reply.content == "My reply"
+
+
+def test_add_reply_prevents_nested_threading(db, top_comment, eagle, eaglet):
+    """add_reply raises ValidationError when target is itself a reply."""
+    reply = CommunityService.add_reply(str(top_comment.id), eagle, "First reply")
+    with pytest.raises(ValidationError):
+        CommunityService.add_reply(str(reply.id), eaglet, "Should not work")
