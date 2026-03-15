@@ -75,7 +75,7 @@ class Nest(SoftDeleteMixin, TimestampMixin, models.Model):
 
     @property
     def member_count(self) -> int:
-        return self.memberships.filter(status="active").count()
+        return self.memberships.filter(status="active").exclude(user=self.eagle).count()
 
     @property
     def is_full(self) -> bool:

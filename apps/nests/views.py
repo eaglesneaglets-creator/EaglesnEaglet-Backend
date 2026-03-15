@@ -55,9 +55,12 @@ class NestViewSet(ViewSet):
         else:
             nests = NestService.get_public_nests()
 
-        # Fix N+1: Annotate member_count and calculate is_full in the database
+        # Fix N+1: Annotate member_count (excluding the eagle/owner) and calculate is_full
         nests = nests.annotate(
-            annotated_member_count=Count('memberships', filter=Q(memberships__status='active'))
+            annotated_member_count=Count(
+                'memberships',
+                filter=Q(memberships__status='active') & ~Q(memberships__user=F('eagle'))
+            )
         ).annotate(
             annotated_is_full=ExpressionWrapper(
                 Q(annotated_member_count__gte=F('max_members')),
@@ -92,7 +95,23 @@ class NestViewSet(ViewSet):
         """Retrieve nest details."""
         from .models import Nest
         try:
-            nest = Nest.objects.select_related("eagle").get(pk=pk)
+            nest = (
+                Nest.objects
+                .select_related("eagle")
+                .annotate(
+                    annotated_member_count=Count(
+                        'memberships',
+                        filter=Q(memberships__status='active') & ~Q(memberships__user=F('eagle'))
+                    )
+                )
+                .annotate(
+                    annotated_is_full=ExpressionWrapper(
+                        Q(annotated_member_count__gte=F('max_members')),
+                        output_field=BooleanField()
+                    )
+                )
+                .get(pk=pk)
+            )
         except Nest.DoesNotExist:
             return Response(
                 {"success": False, "error": {"message": "Nest not found."}},
