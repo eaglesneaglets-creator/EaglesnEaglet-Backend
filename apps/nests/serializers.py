@@ -29,11 +29,21 @@ class UserMinimalSerializer(serializers.ModelSerializer):
     """Minimal user representation for nested serializers."""
 
     full_name = serializers.CharField(read_only=True)
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "email", "first_name", "last_name", "full_name", "role"]
+        fields = ["id", "email", "first_name", "last_name", "full_name", "role", "avatar_url"]
         read_only_fields = fields
+
+    def get_avatar_url(self, obj):
+        """Return the best available avatar URL."""
+        if obj.avatar:
+            try:
+                return obj.avatar.url
+            except Exception:
+                pass
+        return obj.profile_picture_url or None
 
 
 # ---------------------------------------------------------------------------
@@ -99,17 +109,44 @@ class NestCreateSerializer(serializers.ModelSerializer):
 # ---------------------------------------------------------------------------
 
 class MembershipSerializer(serializers.ModelSerializer):
-    """Read-only membership with nested user."""
+    """Read-only membership with nested user, points, and current module."""
 
     user_details = UserMinimalSerializer(source="user", read_only=True)
+    total_points = serializers.SerializerMethodField()
+    current_module = serializers.SerializerMethodField()
 
     class Meta:
         model = NestMembership
         fields = [
             "id", "user_details", "role", "status", "joined_at",
-            "progress_percentage", "created_at",
+            "progress_percentage", "total_points", "current_module", "created_at",
         ]
         read_only_fields = fields
+
+    def get_total_points(self, obj):
+        """Sum of all points earned by this user."""
+        from django.db.models import Sum
+        from apps.points.models import PointTransaction
+        result = PointTransaction.objects.filter(
+            user=obj.user
+        ).aggregate(total=Sum("points"))
+        return result["total"] or 0
+
+    def get_current_module(self, obj):
+        """Title of the most recently accessed module in this nest."""
+        from apps.content.models import ContentProgress
+        latest = (
+            ContentProgress.objects.filter(
+                user=obj.user,
+                content_item__module__nest=obj.nest,
+            )
+            .select_related("content_item__module")
+            .order_by("-updated_at")
+            .first()
+        )
+        if latest:
+            return latest.content_item.module.title
+        return None
 
 
 # ---------------------------------------------------------------------------
