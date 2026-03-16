@@ -45,3 +45,18 @@ def test_get_badge_progress_points(eaglet):
     badge = Badge.objects.get(slug="hatchling")
     progress = PointService.get_badge_progress(eaglet, badge)
     assert progress == 50
+
+
+@pytest.mark.django_db
+def test_badge_serializer_progress_field(eaglet, rf):
+    """BadgeSerializer returns correct progress for current user."""
+    from apps.points.serializers import BadgeSerializer
+    from apps.points.models import PointTransaction
+    PointTransaction.objects.create(user=eaglet, points=50, activity_type="check_in")
+    badge = Badge.objects.get(slug="hatchling")
+    request = rf.get("/")
+    request.user = eaglet
+    data = BadgeSerializer(badge, context={"request": request}).data
+    assert data["progress"] == 50
+    assert data["earned"] is False
+    assert "slug" in data
