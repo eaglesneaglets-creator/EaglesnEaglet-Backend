@@ -159,7 +159,9 @@ def on_early_assignment_submit(sender, instance, created, **kwargs):
     if not created:
         return
     assignment = instance.assignment
-    if assignment.due_date and instance.submitted_at < assignment.due_date:
+    if not assignment.due_date:
+        logger.debug("early_bird badge skipped: assignment %s has no due date", assignment.id)
+    elif instance.submitted_at < assignment.due_date:
         from apps.points.services import PointService
         PointService.award_one_time_badge(instance.user, "early_bird")
 
@@ -167,7 +169,9 @@ def on_early_assignment_submit(sender, instance, created, **kwargs):
 @receiver(post_save, sender="content.ModuleAssignmentAttempt")
 def on_perfect_quiz_score(sender, instance, created, **kwargs):
     """Award 'Perfect Feathers' on a 100% quiz score."""
-    if not created or instance.score != 100:
+    if not created:
+        return
+    if instance.score != 100:
         return
     from apps.points.services import PointService
     PointService.award_one_time_badge(instance.user, "perfect_feathers")
