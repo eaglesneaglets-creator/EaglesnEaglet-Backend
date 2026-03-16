@@ -136,7 +136,7 @@ class Badge(TimestampMixin, models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
-    icon = models.URLField(max_length=2000, blank=True)  # extended for SVG data URIs
+    icon = models.TextField(blank=True)  # stores SVG data URIs (data:image/svg+xml,...)
     slug = models.SlugField(max_length=60, unique=True, blank=True, default="")
     criteria_type = models.CharField(
         max_length=30, choices=CriteriaType.choices
