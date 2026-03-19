@@ -31,6 +31,9 @@ class DisableMigrations:
     def __getitem__(self, item):
         return None
 
+    def setdefault(self, key, default=None):
+        return default
+
 
 MIGRATION_MODULES = DisableMigrations()
 

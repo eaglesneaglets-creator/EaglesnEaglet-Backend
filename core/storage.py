@@ -10,8 +10,10 @@ quality compression (q_auto), and responsive image transformations.
 
 import cloudinary
 import cloudinary.uploader
+from cloudinary.exceptions import Error as CloudinaryError
 from cloudinary.utils import cloudinary_url
 from django.conf import settings
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 
 # Folder map – mirrors CLOUDINARY_FOLDERS in settings
@@ -58,13 +60,20 @@ def upload_to_cloudinary(file, file_type: str, **kwargs):
     """
     folder = get_folder(file_type)
 
-    # Determine resource type based on file_type
+    # Determine resource type based on file_type or extension
     resource_type = 'auto'
+    filename = str(file).lower()
+    
     if file_type in ('profile_pictures', 'content_images', 'store_images'):
         resource_type = 'image'
     elif file_type == 'videos':
         resource_type = 'video'
-    elif file_type in ('cvs', 'government_ids', 'recommendations'):
+    elif filename.endswith('.pdf'):
+        resource_type = 'image'  # PDFs can be treated as images to get thumbnails
+    elif (
+        file_type in ('cvs', 'government_ids', 'recommendations', 'misc') or
+        filename.endswith(('.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'))
+    ):
         resource_type = 'raw'
 
     upload_options = {
@@ -87,16 +96,17 @@ def upload_to_cloudinary(file, file_type: str, **kwargs):
         upload_options.update({
             'quality': 'auto',          # Automatic quality
             'resource_type': 'video',
-            'eager': [
-                # Pre-generate an optimized streaming version
-                {'streaming_profile': 'auto', 'format': 'mp4'},
-            ],
-            'eager_async': True,
         })
 
     upload_options.update(kwargs)
 
-    result = cloudinary.uploader.upload(file, **upload_options)
+    try:
+        result = cloudinary.uploader.upload(file, **upload_options)
+    except CloudinaryError as exc:
+        raise DRFValidationError(
+            detail={"file": "File upload failed. Please check your connection and try again."}
+        ) from exc
+
     public_id = result.get('public_id')
 
     response = {
@@ -114,6 +124,12 @@ def upload_to_cloudinary(file, file_type: str, **kwargs):
     if resource_type == 'image' and public_id:
         response['optimized_url'] = get_optimized_url(public_id)
         response['thumbnail_url'] = get_optimized_url(public_id, preset='thumbnail')
+
+    # Manual thumbnail upload support
+    thumbnail = kwargs.get('thumbnail')
+    if thumbnail:
+        thumb_result = upload_to_cloudinary(thumbnail, file_type='content_images')
+        response['thumbnail_url'] = thumb_result.get('secure_url')
 
     return response
 
@@ -184,29 +200,41 @@ def get_responsive_urls(public_id: str, widths: list = None) -> dict:
     return urls
 
 
-def get_video_thumbnail(public_id: str, width: int = 640, height: int = 360) -> str:
+def get_video_thumbnail(public_id: str, width: int = 600, height: int = 400) -> str:
     """
-    Generate a thumbnail image from a video.
-
-    Args:
-        public_id: The Cloudinary public_id of the video.
-        width: Thumbnail width.
-        height: Thumbnail height.
-
-    Returns:
-        Secure URL for the video thumbnail (as jpg).
+    Generate a thumbnail image from the middle of a video.
     """
     url, _ = cloudinary_url(
         public_id,
         secure=True,
-        resource_type='video',
+        resource_type="video",
+        format="jpg",
+        transformation=[{
+            'width': width,
+            'height': height,
+            'crop': 'fill',
+            'start_offset': 'auto',
+            'quality': 'auto',
+        }],
+    )
+    return url
+def get_pdf_thumbnail(public_id: str, width: int = 640, height: int = 800) -> str:
+    """
+    Generate a thumbnail image from first page of a PDF.
+    PDF must be uploaded with resource_type='image' or handled via special transformation.
+    Note: Cloudinary handles PDF-to-image if resource_type is 'image' or via specific flags.
+    """
+    url, _ = cloudinary_url(
+        public_id,
+        secure=True,
         format='jpg',
         transformation=[{
             'width': width,
             'height': height,
             'crop': 'fill',
+            'gravity': 'north',
+            'page': 1,
             'quality': 'auto',
-            'start_offset': '0',
         }],
     )
     return url
