@@ -158,11 +158,12 @@ class MentorshipRequestSerializer(serializers.ModelSerializer):
 
     eaglet_details = UserMinimalSerializer(source="eaglet", read_only=True)
     reviewed_by_details = UserMinimalSerializer(source="reviewed_by", read_only=True)
+    nest_name = serializers.CharField(source="nest.name", read_only=True)
 
     class Meta:
         model = MentorshipRequest
         fields = [
-            "id", "nest", "eaglet_details", "status", "message",
+            "id", "nest", "nest_name", "eaglet_details", "status", "message",
             "reviewed_by_details", "reviewed_at", "created_at",
         ]
         read_only_fields = fields

@@ -30,8 +30,9 @@ class SecurityHeadersMiddleware:
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: https:",
             "font-src 'self' https://fonts.gstatic.com",
-            "connect-src 'self'",
-            "frame-ancestors 'none'",
+            "connect-src 'self' https://*.cloudinary.com",
+            "frame-src 'self' https://*.cloudinary.com",
+            "frame-ancestors 'self'",
             "base-uri 'self'",
             "form-action 'self'",
         ]
@@ -45,8 +46,8 @@ class SecurityHeadersMiddleware:
 
         # Additional security headers
         response['X-Content-Type-Options'] = 'nosniff'
-        response['X-Frame-Options'] = 'DENY'
-        response['X-XSS-Protection'] = '1; mode=block'
+        response['X-Frame-Options'] = 'SAMEORIGIN'
+        # X-XSS-Protection is deprecated; CSP above provides protection
         response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
 
         # Remove server header

@@ -54,15 +54,15 @@ api_v1_patterns = [
     # Authentication
     path('auth/', include('apps.users.urls')),
 
-    # Core app URLs (to be implemented)
-    # path('nests/', include('apps.nests.urls')),
-    # path('content/', include('apps.content.urls')),
-    # path('points/', include('apps.points.urls')),
+    # Core app URLs
+    path('nests/', include('apps.nests.urls')),
+    path('content/', include('apps.content.urls')),
+    path('points/', include('apps.points.urls')),
     # path('chat/', include('apps.chat.urls')),
     # path('store/', include('apps.store.urls')),
     # path('donations/', include('apps.donations.urls')),
-    # path('notifications/', include('apps.notifications.urls')),
-    # path('analytics/', include('apps.analytics.urls')),
+    path('notifications/', include('apps.notifications.urls')),
+    path('analytics/', include('apps.analytics.urls')),
 ]
 
 urlpatterns = [

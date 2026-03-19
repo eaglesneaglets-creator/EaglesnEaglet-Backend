@@ -22,7 +22,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 
 from core.permissions.roles import IsEagle, IsEaglet, IsAdmin
-from core.throttling import BurstRateThrottle, LoginRateThrottle
+from core.throttling import BurstRateThrottle, LoginRateThrottle, RegisterRateThrottle, PasswordResetThrottle
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class RegisterView(APIView):
     """
 
     permission_classes = [AllowAny]
-    throttle_classes = [BurstRateThrottle]
+    throttle_classes = [RegisterRateThrottle]
 
     def post(self, request):
         serializer = UserRegistrationSerializer(data=request.data)
@@ -355,7 +355,7 @@ class PasswordResetRequestView(APIView):
     """
 
     permission_classes = [AllowAny]
-    throttle_classes = [BurstRateThrottle]
+    throttle_classes = [PasswordResetThrottle]
 
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
@@ -469,23 +469,26 @@ class CurrentUserView(APIView):
 
         # Include KYC status for Eagles
         if user.is_eagle:
-            try:
-                kyc = MentorKYC.objects.get(user=user)
+            kyc = getattr(user, 'mentor_kyc', None)
+            if kyc:
                 data['kyc_status'] = kyc.status
                 data['kyc_completion'] = kyc.completion_percentage
-            except MentorKYC.DoesNotExist:
-                data['kyc_status'] = None
-                data['kyc_completion'] = 0
+            else:
+                # Fallback to direct query if not prefetched
+                kyc = MentorKYC.objects.filter(user=user).first()
+                data['kyc_status'] = kyc.status if kyc else None
+                data['kyc_completion'] = kyc.completion_percentage if kyc else 0
 
         # Include profile status for Eaglets
         if user.is_eaglet:
-            try:
-                profile = EagletProfile.objects.get(user=user)
+            profile = getattr(user, 'eaglet_profile', None)
+            if profile:
                 data['profile_completeness'] = profile.profile_completeness
                 data['onboarding_completed'] = profile.onboarding_completed
-            except EagletProfile.DoesNotExist:
-                data['profile_completeness'] = 0
-                data['onboarding_completed'] = False
+            else:
+                profile = EagletProfile.objects.filter(user=user).first()
+                data['profile_completeness'] = profile.profile_completeness if profile else 0
+                data['onboarding_completed'] = profile.onboarding_completed if profile else False
 
         return Response({
             'success': True,
@@ -1355,6 +1358,7 @@ class GoogleOAuthLoginView(APIView):
     """
 
     permission_classes = [AllowAny]
+    throttle_classes = [LoginRateThrottle]
 
     def get(self, request):
         import json
@@ -1422,6 +1426,7 @@ class GoogleOAuthCallbackView(APIView):
     """
 
     permission_classes = [AllowAny]
+    throttle_classes = [LoginRateThrottle]
 
     def post(self, request):
         import json
@@ -2005,6 +2010,30 @@ class AdminKYCApproveView(APIView):
 
         # Approve the application
         kyc.approve(request.user)
+
+        # Auto-create a Nest for mentors if they are approved
+        if role == 'mentor':
+            try:
+                from apps.nests.services import NestService
+                from apps.nests.models import Nest
+                # Check if mentor already has a nest
+                if not Nest.objects.filter(eagle=kyc.user).exists():
+                    nest_name = f"{kyc.user.first_name}'s Nest" if kyc.user.first_name else f"Eagle {kyc.user.id}'s Nest"
+                    industry_focus = kyc.current_occupation if getattr(kyc, 'current_occupation', None) else "General"
+                    description = getattr(kyc, 'profile_description', "Welcome to my Nest! Let's grow together.")
+                    if not description:
+                        description = "Welcome to my Nest! Let's grow together."
+                        
+                    NestService.create_nest(kyc.user, {
+                        "name": nest_name,
+                        "description": description,
+                        "industry_focus": industry_focus,
+                        "privacy": "public",
+                        "max_members": getattr(kyc, 'max_mentees', 10) or 10
+                    })
+                    logger.info(f"Auto-created Nest for newly approved mentor: {kyc.user.email}")
+            except Exception as e:
+                logger.error(f"Failed to auto-create Nest for mentor {kyc.user.email}: {e}")
 
         # Send approval notification email
         try:
