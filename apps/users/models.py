@@ -384,12 +384,12 @@ class UserSession(TimestampMixin):
         on_delete=models.CASCADE,
         related_name='sessions'
     )
-    session_key = models.CharField(max_length=100, unique=True)
-    ip_address = models.GenericIPAddressField()
+    session_key = models.CharField(max_length=100, unique=True, db_index=True)
+    ip_address = models.GenericIPAddressField(db_index=True)
     user_agent = models.TextField(blank=True)
     device_type = models.CharField(max_length=50, blank=True)
     location = models.CharField(max_length=200, blank=True)
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True, db_index=True)
     last_activity = models.DateTimeField(auto_now=True)
     expires_at = models.DateTimeField()
 
@@ -431,6 +431,11 @@ class LoginHistory(models.Model):
         verbose_name = 'Login History'
         verbose_name_plural = 'Login History'
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'success']),
+            models.Index(fields=['ip_address']),
+            models.Index(fields=['created_at']),
+        ]
 
     def __str__(self):
         status = 'Success' if self.success else 'Failed'

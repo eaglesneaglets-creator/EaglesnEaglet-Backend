@@ -1,0 +1,43 @@
+# =============================================================================
+# Eagles & Eaglets - Production Docker Compose Overlay
+# =============================================================================
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# =============================================================================
+
+services:
+  backend:
+    build:
+      context: .
+      target: production
+    volumes:
+      - static_data:/app/staticfiles
+      - media_data:/app/media
+    environment:
+      - DJANGO_SETTINGS_MODULE=eaglesneagletsbackend.settings.production
+    # Overwrite command for production
+    command: >
+      sh -c "python manage.py migrate --noinput --settings=eaglesneagletsbackend.settings.production &&
+             gunicorn --bind 0.0.0.0:8000 --workers 4 --threads 2
+             --worker-class gthread --worker-tmp-dir /dev/shm
+             --access-logfile - --error-logfile -
+             --capture-output --enable-stdio-inheritance
+             eaglesneagletsbackend.wsgi:application"
+
+  celery:
+    build:
+      context: .
+      target: production
+    volumes: []
+    environment:
+      - DJANGO_SETTINGS_MODULE=eaglesneagletsbackend.settings.production
+    command: celery -A eaglesneagletsbackend worker --loglevel=info
+
+  celery-beat:
+    build:
+      context: .
+      target: production
+    volumes: []
+    environment:
+      - DJANGO_SETTINGS_MODULE=eaglesneagletsbackend.settings.production
+    command: celery -A eaglesneagletsbackend beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler

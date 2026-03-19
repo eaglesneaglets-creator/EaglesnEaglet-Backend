@@ -10,7 +10,7 @@ from decouple import config, Csv
 import cloudinary
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-local-dev-key-change-in-production')
+SECRET_KEY = config('SECRET_KEY')  # No default — .env MUST define this
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True

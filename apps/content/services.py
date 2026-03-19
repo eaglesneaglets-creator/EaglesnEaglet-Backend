@@ -774,14 +774,28 @@ class ProgressService:
     def get_mentor_submissions(
         mentor, nest_id: str = None, submission_status: str = None
     ) -> QuerySet:
-        """Fetch all submissions for assignments in a mentor's nests."""
+        """Fetch all submissions for assignments in a mentor's nests.
+
+        Covers both standalone assignments (assignment.nest) and
+        module-linked assignments (assignment.module.nest).
+        """
+        from django.db.models import Q
 
         qs = AssignmentSubmission.objects.filter(
-            assignment__nest__eagle=mentor
-        ).select_related("assignment__nest", "user")
+            Q(assignment__nest__eagle=mentor) |
+            Q(assignment__module__nest__eagle=mentor)
+        ).select_related(
+            "assignment__nest",
+            "assignment__module__nest",
+            "user",
+            "graded_by",
+        ).distinct()
 
         if nest_id:
-            qs = qs.filter(assignment__nest_id=nest_id)
+            qs = qs.filter(
+                Q(assignment__nest_id=nest_id) |
+                Q(assignment__module__nest_id=nest_id)
+            )
 
         if submission_status:
             qs = qs.filter(status=submission_status)
