@@ -51,10 +51,36 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
 # -----------------------------------------------------------------------------
-# STAGE 3: Production Image
+# STAGE 3: Development Image (optional - for local development)
+# -----------------------------------------------------------------------------
+FROM base as development
+
+# Install all dependencies including dev tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY . .
+
+# Install development dependencies
+RUN pip install debugpy watchdog
+
+EXPOSE 8000
+
+# Run Django development server with auto-reload
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+
+# -----------------------------------------------------------------------------
+# STAGE 4: Production Image
 # -----------------------------------------------------------------------------
 # This is our final, lean production image
 FROM base as production
+
+ENV DJANGO_ENV=production
 
 # Install only runtime dependencies (not build tools)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -96,27 +122,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Default command to run the application
 # Gunicorn is a production-grade WSGI server
 CMD ["/bin/sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 4 --threads 2 --worker-class gthread --worker-tmp-dir /dev/shm --access-logfile - --error-logfile - --capture-output --enable-stdio-inheritance eaglesneagletsbackend.wsgi:application"]
-
-# -----------------------------------------------------------------------------
-# STAGE 4: Development Image (optional - for local development)
-# -----------------------------------------------------------------------------
-FROM base as development
-
-# Install all dependencies including dev tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-COPY . .
-
-# Install development dependencies
-RUN pip install debugpy watchdog
-
-EXPOSE 8000
-
-# Run Django development server with auto-reload
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
