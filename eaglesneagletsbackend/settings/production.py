@@ -7,6 +7,7 @@ Run with: DJANGO_SETTINGS_MODULE=eaglesneagletsbackend.settings.production
 
 from .base import *
 from decouple import config, Csv
+import dj_database_url
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.redis import RedisIntegration
@@ -23,22 +24,41 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
 # =============================================================================
 # DATABASE - PostgreSQL with Connection Pooling
 # =============================================================================
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME'),
-        'USER': config('DB_USER'),
-        'PASSWORD': config('DB_PASSWORD'),
-        'HOST': config('DB_HOST'),
-        'PORT': config('DB_PORT', default='5432'),
-        'CONN_MAX_AGE': 600,  # 10 minutes connection persistence
-        'CONN_HEALTH_CHECKS': True,
-        'OPTIONS': {
-            'connect_timeout': 10,
-            'options': '-c statement_timeout=30000',  # 30 second query timeout
-        },
+# Railway (and most PaaS providers) inject DATABASE_URL as a single connection
+# string. We parse it first; individual DB_* vars are the fallback for
+# environments that configure the connection piece-by-piece.
+_database_url = config('DATABASE_URL', default=None)
+
+if _database_url:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            _database_url,
+            conn_max_age=600,
+            conn_health_checks=True,
+            ssl_require=True,
+        )
     }
-}
+    DATABASES['default']['OPTIONS'] = {
+        'connect_timeout': 10,
+        'options': '-c statement_timeout=30000',
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': config('PGDATABASE', default=config('DB_NAME', default='postgres')),
+            'USER': config('PGUSER', default=config('DB_USER', default='postgres')),
+            'PASSWORD': config('PGPASSWORD', default=config('DB_PASSWORD', default='')),
+            'HOST': config('PGHOST', default=config('DB_HOST', default='localhost')),
+            'PORT': config('PGPORT', default=config('DB_PORT', default='5432')),
+            'CONN_MAX_AGE': 600,
+            'CONN_HEALTH_CHECKS': True,
+            'OPTIONS': {
+                'connect_timeout': 10,
+                'options': '-c statement_timeout=30000',
+            },
+        }
+    }
 
 # Database connection pooling with pgBouncer (if using)
 # DATABASES['default']['OPTIONS']['options'] = '-c search_path=public'
@@ -155,17 +175,17 @@ CORS_EXPOSE_HEADERS = ['Content-Disposition']
 # EMAIL CONFIGURATION
 # =============================================================================
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = config('EMAIL_HOST')
+EMAIL_HOST = config('EMAIL_HOST', default='')
 EMAIL_PORT = config('EMAIL_PORT', cast=int, default=587)
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = config('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@eaglesneaglets.com')
 SERVER_EMAIL = config('SERVER_EMAIL', default='errors@eaglesneaglets.com')
 
 
 # =============================================================================
-# STATIC & MEDIA FILES - AWS S3
+# STATIC & MEDIA FILES - AWS S3 or Cloudinary Fallback
 # =============================================================================
 AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID', default=None)
 AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default=None)
@@ -178,12 +198,48 @@ AWS_S3_OBJECT_PARAMETERS = {
 AWS_DEFAULT_ACL = None
 AWS_S3_FILE_OVERWRITE = False
 
+CLOUDINARY_API_KEY = config('CLOUDINARY_API_KEY', default='')
+
 if AWS_ACCESS_KEY_ID:
     # Use S3 for static and media in production
     STATICFILES_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
     DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
     STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/static/'
     MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
+elif CLOUDINARY_API_KEY:
+    import cloudinary
+    
+    CLOUDINARY_STORAGE = {
+        'CLOUD_NAME': config('CLOUDINARY_CLOUD_NAME', default=''),
+        'API_KEY': CLOUDINARY_API_KEY,
+        'API_SECRET': config('CLOUDINARY_API_SECRET', default=''),
+    }
+
+    cloudinary.config(
+        cloud_name=config('CLOUDINARY_CLOUD_NAME', default=''),
+        api_key=CLOUDINARY_API_KEY,
+        api_secret=config('CLOUDINARY_API_SECRET', default=''),
+        secure=True,
+    )
+
+    CLOUDINARY_OPTIMIZATION = {
+        'fetch_format': 'auto',
+        'quality': 'auto',
+        'flags': 'progressive',
+    }
+
+    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+    CLOUDINARY_FOLDERS = {
+        'profile_pictures': 'eaglesneaglets/images/profile_pictures',
+        'government_ids': 'eaglesneaglets/documents/government_ids',
+        'cvs': 'eaglesneaglets/documents/cvs',
+        'recommendations': 'eaglesneaglets/documents/recommendations',
+        'videos': 'eaglesneaglets/videos',
+        'content_images': 'eaglesneaglets/images/content',
+        'store_images': 'eaglesneaglets/images/store',
+        'misc': 'eaglesneaglets/misc',
+    }
 
 
 # =============================================================================
@@ -232,16 +288,16 @@ del TEMPLATES[0]['APP_DIRS']
 # =============================================================================
 # PAYSTACK CONFIGURATION
 # =============================================================================
-PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY')
-PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY')
+PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY', default='')
+PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY', default='')
 
 
 # =============================================================================
 # GOOGLE OAUTH 2.0 SETTINGS
 # =============================================================================
-GOOGLE_OAUTH2_CLIENT_ID = config('GOOGLE_OAUTH2_CLIENT_ID')
-GOOGLE_OAUTH2_CLIENT_SECRET = config('GOOGLE_OAUTH2_CLIENT_SECRET')
-GOOGLE_OAUTH2_REDIRECT_URI = config('GOOGLE_OAUTH2_REDIRECT_URI')
+GOOGLE_OAUTH2_CLIENT_ID = config('GOOGLE_OAUTH2_CLIENT_ID', default='')
+GOOGLE_OAUTH2_CLIENT_SECRET = config('GOOGLE_OAUTH2_CLIENT_SECRET', default='')
+GOOGLE_OAUTH2_REDIRECT_URI = config('GOOGLE_OAUTH2_REDIRECT_URI', default='')
 
 
 # =============================================================================
