@@ -121,4 +121,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Default command to run the application
 # Gunicorn is a production-grade WSGI server
-CMD ["/bin/sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 4 --threads 2 --worker-class gthread --worker-tmp-dir /dev/shm --access-logfile - --error-logfile - --capture-output --enable-stdio-inheritance eaglesneagletsbackend.wsgi:application"]
+CMD ["/bin/sh", "-c", "daphne -b 0.0.0.0 -p ${PORT:-8000} eaglesneagletsbackend.asgi:application"]
