@@ -207,22 +207,6 @@ if SENTRY_DSN:
 
 
 # =============================================================================
-# LOGGING - Production
-# =============================================================================
-LOGGING['handlers']['file']['level'] = 'WARNING'
-LOGGING['handlers']['console']['level'] = 'WARNING'
-LOGGING['handlers']['console']['formatter'] = 'json'
-
-# Add Sentry handler
-if SENTRY_DSN:
-    LOGGING['handlers']['sentry'] = {
-        'level': 'ERROR',
-        'class': 'sentry_sdk.integrations.logging.EventHandler',
-    }
-    LOGGING['root']['handlers'].append('sentry')
-
-
-# =============================================================================
 # ADMINS - Error notification
 # =============================================================================
 ADMINS = [

@@ -211,6 +211,7 @@ class ContentProgress(TimestampMixin, models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="content_progress",
+        db_index=True,
     )
     content_item = models.ForeignKey(
         ContentItem, on_delete=models.CASCADE, related_name="progress_records"

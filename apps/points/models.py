@@ -161,9 +161,11 @@ class UserBadge(TimestampMixin, models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="badges",
+        db_index=True,
     )
     badge = models.ForeignKey(
-        Badge, on_delete=models.CASCADE, related_name="earners"
+        Badge, on_delete=models.CASCADE, related_name="earners",
+        db_index=True,
     )
     earned_at = models.DateTimeField(auto_now_add=True)
 
@@ -174,6 +176,9 @@ class UserBadge(TimestampMixin, models.Model):
                 fields=["user", "badge"],
                 name="unique_user_badge",
             ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "-earned_at"]),   # fetch user's badges sorted by date
         ]
 
     def __str__(self) -> str:

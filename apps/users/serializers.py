@@ -130,11 +130,16 @@ class UserSerializer(serializers.ModelSerializer):
         ]
 
     def get_kyc_status(self, obj):
-        """Get KYC status for both eagle and eaglet users."""
+        """Get KYC status — uses prefetched relation if available to avoid N+1."""
         if obj.role == 'eagle':
+            # Use cached reverse relation if prefetched via select_related, otherwise query
+            if hasattr(obj, 'mentor_kyc'):
+                return obj.mentor_kyc.status
             kyc = MentorKYC.objects.filter(user=obj).first()
             return kyc.status if kyc else None
         elif obj.role == 'eaglet':
+            if hasattr(obj, 'mentee_kyc'):
+                return obj.mentee_kyc.status
             kyc = MenteeKYC.objects.filter(user=obj).first()
             return kyc.status if kyc else None
         return None
