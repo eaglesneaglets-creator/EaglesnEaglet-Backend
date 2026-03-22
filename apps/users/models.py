@@ -350,7 +350,7 @@ class UserProfile(TimestampMixin):
     # Location
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=100, blank=True)
-    country = models.CharField(max_length=100, default='Nigeria')
+    country = models.CharField(max_length=100, default='Ghana')
 
     # Professional info
     occupation = models.CharField(max_length=100, blank=True)
