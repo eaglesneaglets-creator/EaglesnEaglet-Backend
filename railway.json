@@ -5,7 +5,7 @@
     "dockerBuildTarget": "production"
   },
   "deploy": {
-    "startCommand": "python manage.py migrate --noinput && python manage.py create_admin && daphne -b 0.0.0.0 -p ${PORT:-8000} eaglesneagletsbackend.asgi:application",
+    "startCommand": "python manage.py migrate --noinput && (python manage.py create_admin || true) && daphne -b 0.0.0.0 -p ${PORT:-8000} eaglesneagletsbackend.asgi:application",
     "healthcheckPath": "/api/v1/health/",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",

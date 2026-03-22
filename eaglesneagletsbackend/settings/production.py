@@ -312,7 +312,7 @@ GOOGLE_OAUTH2_REDIRECT_URI = config('GOOGLE_OAUTH2_REDIRECT_URI', default='')
 # =============================================================================
 # FRONTEND URL - Required for email verification links
 # =============================================================================
-FRONTEND_URL = config('FRONTEND_URL')
+FRONTEND_URL = config('FRONTEND_URL', default='')
 
 
 # =============================================================================
