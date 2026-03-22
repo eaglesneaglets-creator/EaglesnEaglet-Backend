@@ -133,6 +133,10 @@ CELERY_TASK_REJECT_ON_WORKER_LOST = True
 # HTTPS Settings
 SECURE_SSL_REDIRECT = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# Exempt the health check endpoint from SSL redirect so Railway's internal
+# health checker (which hits the container directly over HTTP) gets a 200
+# instead of a 301, which would cause the healthcheck to fail.
+SECURE_REDIRECT_EXEMPT = [r'^api/v1/health/$']
 
 # HSTS (HTTP Strict Transport Security)
 SECURE_HSTS_SECONDS = 31536000  # 1 year
