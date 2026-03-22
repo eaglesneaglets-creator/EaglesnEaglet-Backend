@@ -5,9 +5,6 @@
     "dockerBuildTarget": "production"
   },
   "deploy": {
-    "startCommand": "/bin/sh -c 'daphne -b 0.0.0.0 -p ${PORT:-8000} eaglesneagletsbackend.asgi:application'",
-    "healthcheckPath": "/api/v1/health/",
-    "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }
