@@ -110,7 +110,7 @@ USER appuser
 
 # Collect static files (CSS, JS, images)
 # This command gathers all static files into one location
-RUN python manage.py collectstatic --noinput --settings=eaglesneagletsbackend.settings.production || true
+RUN SECRET_KEY=build-only-dummy-key python manage.py collectstatic --noinput --settings=eaglesneagletsbackend.settings.production || true
 
 # Expose port 8000 - this is the port our app will listen on
 EXPOSE 8000

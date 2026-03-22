@@ -18,7 +18,10 @@ SECRET_KEY = config('SECRET_KEY')
 
 DEBUG = False
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv(), default='*')
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv(), default='*') + [
+    'healthcheck.railway.app',
+    '.up.railway.app',
+]
 
 
 # =============================================================================
