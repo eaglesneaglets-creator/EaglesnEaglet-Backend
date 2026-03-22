@@ -16,6 +16,11 @@ from .constants import EMAIL_SUBJECTS
 logger = logging.getLogger(__name__)
 
 
+def _frontend_url():
+    """Return FRONTEND_URL from settings, never localhost in production."""
+    return settings.FRONTEND_URL
+
+
 @shared_task(bind=True, max_retries=3)
 def send_verification_email(self, user_id):
     """
@@ -33,7 +38,7 @@ def send_verification_email(self, user_id):
             return
 
         # Build verification URL
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_url = _frontend_url()
         verification_url = f"{frontend_url}/verify-email?token={user.email_verification_token}"
 
         # Render email template
@@ -76,7 +81,7 @@ def send_password_reset_email(self, user_id):
         user = User.objects.get(id=user_id)
 
         # Build reset URL
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_url = _frontend_url()
         reset_url = f"{frontend_url}/reset-password?token={user.password_reset_token}"
 
         # Render email template
@@ -120,7 +125,7 @@ def send_kyc_submitted_email(self, user_id):
         user = User.objects.get(id=user_id)
 
         # Build status URL
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_url = _frontend_url()
         status_url = f"{frontend_url}/kyc/pending"
 
         # Render email template
@@ -164,7 +169,7 @@ def send_kyc_approved_email(self, user_id):
         user = User.objects.get(id=user_id)
 
         # Build login URL (user needs to log in first to access dashboard)
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_url = _frontend_url()
         login_url = f"{frontend_url}/login"
 
         # Render email template
@@ -208,7 +213,7 @@ def send_kyc_rejected_email(self, user_id, rejection_reason):
         user = User.objects.get(id=user_id)
 
         # Build KYC URL
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_url = _frontend_url()
         kyc_url = f"{frontend_url}/kyc"
 
         # Render email template
@@ -252,7 +257,7 @@ def send_welcome_email(self, user_id):
         user = User.objects.get(id=user_id)
 
         # Build login URL
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_url = _frontend_url()
         login_url = f"{frontend_url}/login"
 
         # Render email template
@@ -295,7 +300,7 @@ def send_eaglet_welcome_email(self, user_id):
         user = User.objects.get(id=user_id)
 
         # Build login URL (user needs to log in first to access dashboard)
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_url = _frontend_url()
         login_url = f"{frontend_url}/login"
         explore_url = f"{frontend_url}/explore"
 
@@ -341,7 +346,7 @@ def send_kyc_changes_requested_email(self, user_id, review_notes):
         user = User.objects.get(id=user_id)
 
         # Build KYC URL
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_url = _frontend_url()
         kyc_url = f"{frontend_url}/kyc"
 
         # Render email template
@@ -391,7 +396,7 @@ def send_profile_submitted_email(self, user_id, role):
         user = User.objects.get(id=user_id)
 
         # Build status URL
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_url = _frontend_url()
 
         # Render email template
         context = {
@@ -436,7 +441,7 @@ def send_profile_approved_email(self, user_id, role):
         user = User.objects.get(id=user_id)
 
         # Build dashboard URL
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_url = _frontend_url()
         dashboard_url = f"{frontend_url}/dashboard"
 
         # Choose template based on role
@@ -527,7 +532,7 @@ def send_profile_changes_requested_email(self, user_id, role, review_notes):
         user = User.objects.get(id=user_id)
 
         # Build profile URL
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        frontend_url = _frontend_url()
         profile_url = f"{frontend_url}/complete-profile"
 
         # Render email template

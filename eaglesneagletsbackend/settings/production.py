@@ -310,6 +310,12 @@ GOOGLE_OAUTH2_REDIRECT_URI = config('GOOGLE_OAUTH2_REDIRECT_URI', default='')
 
 
 # =============================================================================
+# FRONTEND URL - Required for email verification links
+# =============================================================================
+FRONTEND_URL = config('FRONTEND_URL', default='')
+
+
+# =============================================================================
 # HEALTH CHECK SETTINGS
 # =============================================================================
 HEALTH_CHECK_TOKEN = config('HEALTH_CHECK_TOKEN', default=None)
