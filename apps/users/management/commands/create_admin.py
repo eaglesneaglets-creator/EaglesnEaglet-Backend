@@ -36,14 +36,42 @@ class Command(BaseCommand):
             ))
             return
 
-        if User.objects.filter(email=email).exists():
-            self.stdout.write(self.style.WARNING(
-                f"Admin with email '{email}' already exists — skipping."
-            ))
-            return
-
         first_name = config('ADMIN_FIRST_NAME', default='Admin')
         last_name = config('ADMIN_LAST_NAME', default='User')
+
+        self.stdout.write(f"Checking for admin user: {email}")
+
+        existing = User.objects.filter(email=email).first()
+
+        if existing:
+            # User exists — ensure they have full admin privileges
+            updated = False
+            if not existing.is_superuser:
+                existing.is_superuser = True
+                updated = True
+            if not existing.is_staff:
+                existing.is_staff = True
+                updated = True
+            if not existing.is_email_verified:
+                existing.is_email_verified = True
+                updated = True
+            if existing.role != User.Role.ADMIN:
+                existing.role = User.Role.ADMIN
+                updated = True
+            if existing.status != User.Status.ACTIVE:
+                existing.status = User.Status.ACTIVE
+                updated = True
+
+            if updated:
+                existing.save()
+                self.stdout.write(self.style.SUCCESS(
+                    f"Existing user '{email}' updated to full admin privileges."
+                ))
+            else:
+                self.stdout.write(self.style.WARNING(
+                    f"Admin '{email}' already exists with correct privileges — skipping."
+                ))
+            return
 
         User.objects.create_superuser(
             email=email,

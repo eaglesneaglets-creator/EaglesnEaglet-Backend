@@ -51,6 +51,7 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault('is_active', True)
         extra_fields.setdefault('is_email_verified', True)
         extra_fields.setdefault('role', User.Role.ADMIN)
+        extra_fields.setdefault('status', User.Status.ACTIVE)
 
         if extra_fields.get('is_staff') is not True:
             raise ValueError('Superuser must have is_staff=True.')
