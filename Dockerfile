@@ -101,24 +101,22 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy application code
 COPY --chown=appuser:appgroup . .
 
-# Create necessary directories
+# Create necessary directories and make start script executable
 RUN mkdir -p /app/staticfiles /app/media /app/logs && \
-    chown -R appuser:appgroup /app
+    chown -R appuser:appgroup /app && \
+    chmod +x /app/start.sh
 
 # Switch to non-root user
 USER appuser
 
 # Collect static files (CSS, JS, images)
-# This command gathers all static files into one location
 RUN SECRET_KEY=build-only-dummy-key python manage.py collectstatic --noinput --settings=eaglesneagletsbackend.settings.production || true
 
-# Expose port 8000 - this is the port our app will listen on
+# Expose port 8000
 EXPOSE 8000
 
-# Health check - Docker will periodically check if our app is healthy
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/api/v1/health/ || exit 1
 
-# Default command to run the application
-# Gunicorn is a production-grade WSGI server
-CMD ["/bin/sh", "-c", "daphne -b 0.0.0.0 -p ${PORT:-8000} eaglesneagletsbackend.asgi:application"]
+CMD ["/app/start.sh"]
