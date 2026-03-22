@@ -42,7 +42,11 @@ def health_check(request):
         if health_status['status'] == 'healthy':
             health_status['status'] = 'degraded'
 
-    status_code = 200 if health_status['status'] == 'healthy' else 503
+    # Return 200 for both 'healthy' and 'degraded' (e.g. Redis down but DB up).
+    # Only return 503 if the database itself is unreachable, which makes the
+    # service truly non-functional. This prevents Railway's healthcheck from
+    # failing during startup when Redis hasn't finished initialising yet.
+    status_code = 200 if health_status['status'] != 'unhealthy' else 503
     return JsonResponse(health_status, status=status_code)
 
 
