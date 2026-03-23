@@ -112,10 +112,17 @@ def award_points_on_assignment_submission(sender, instance, created, **kwargs):
 # module path like "apps.users".
 # ---------------------------------------------------------------------------
 
+def _is_eaglet(user) -> bool:
+    """Return True only for Eaglet (mentee) users."""
+    return getattr(user, 'role', None) == 'eaglet'
+
+
 @receiver(post_save, sender="users.UserProfile")
 def on_profile_completed(sender, instance, created, **kwargs):
-    """Award 'Egg Cracker' when a user profile is first created."""
+    """Award 'Egg Cracker' when an Eaglet's profile is first created."""
     if not created:
+        return
+    if not _is_eaglet(instance.user):
         return
     from apps.points.services import PointService
     PointService.award_one_time_badge(instance.user, "egg_cracker")
@@ -123,10 +130,12 @@ def on_profile_completed(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender="nests.NestMembership")
 def on_nest_membership_active(sender, instance, created, **kwargs):
-    """Award 'Found My Nest' on first active nest join (not on status updates)."""
+    """Award 'Found My Nest' when an Eaglet joins their first active nest."""
     if not created:
         return
     if instance.status != "active":
+        return
+    if not _is_eaglet(instance.user):
         return
     from apps.points.services import PointService
     PointService.award_one_time_badge(instance.user, "first_nest_join")
@@ -134,7 +143,7 @@ def on_nest_membership_active(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender="nests.NestResource")
 def on_first_resource_shared(sender, instance, created, **kwargs):
-    """Award 'Resource Eagle' on first resource upload."""
+    """Award 'Resource Eagle' on first resource upload (Eagle action — no role filter)."""
     if not created:
         return
     from apps.points.services import PointService
@@ -149,14 +158,18 @@ def on_manual_point_received(sender, instance, created, **kwargs):
     from apps.points.models import PointTransaction
     if instance.source != PointTransaction.Source.MANUAL:
         return
+    if not _is_eaglet(instance.user):
+        return
     from apps.points.services import PointService
     PointService.award_one_time_badge(instance.user, "mentors_mark")
 
 
 @receiver(post_save, sender="content.AssignmentSubmission")
 def on_early_assignment_submit(sender, instance, created, **kwargs):
-    """Award 'Early Bird' when submission is before due date."""
+    """Award 'Early Bird' when an Eaglet submits before due date."""
     if not created:
+        return
+    if not _is_eaglet(instance.user):
         return
     assignment = instance.assignment
     if not assignment.due_date:
@@ -168,10 +181,12 @@ def on_early_assignment_submit(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender="content.ModuleAssignmentAttempt")
 def on_perfect_quiz_score(sender, instance, created, **kwargs):
-    """Award 'Perfect Feathers' on a 100% quiz score."""
+    """Award 'Perfect Feathers' when an Eaglet scores 100% on a quiz."""
     if not created:
         return
     if instance.score != 100:
+        return
+    if not _is_eaglet(instance.user):
         return
     from apps.points.services import PointService
     PointService.award_one_time_badge(instance.user, "perfect_feathers")

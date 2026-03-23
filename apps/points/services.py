@@ -243,7 +243,9 @@ class PointService:
 
     @staticmethod
     def check_and_award_badges(user):
-        """Check all badge criteria and award any newly earned badges."""
+        """Check all badge criteria and award any newly earned badges (Eaglets only)."""
+        if getattr(user, 'role', None) != 'eaglet':
+            return
         from apps.content.models import ContentProgress, AssignmentSubmission
         from apps.points.models import PointTransaction
 
@@ -328,12 +330,11 @@ class PointService:
         """Create a notification when a badge is earned."""
         try:
             from apps.notifications.services import NotificationService
-            NotificationService.create(
-                user=user,
+            NotificationService.create_notification(
+                recipient=user,
                 notification_type="badge_earned",
                 title=f"Badge Earned: {badge.name}",
                 message=badge.description,
-                data={"badge_id": str(badge.id), "badge_slug": badge.slug},
             )
         except Exception as exc:
             logger.warning("Badge notification failed: %s", exc)
