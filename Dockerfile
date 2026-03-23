@@ -104,7 +104,7 @@ COPY --chown=appuser:appgroup . .
 # Create necessary directories and make start script executable
 RUN mkdir -p /app/staticfiles /app/media /app/logs && \
     chown -R appuser:appgroup /app && \
-    chmod +x /app/start.sh
+    chmod +x /app/start.sh /app/start-worker.sh
 
 # Switch to non-root user
 USER appuser
