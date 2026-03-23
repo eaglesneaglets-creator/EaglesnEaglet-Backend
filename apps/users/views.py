@@ -1237,16 +1237,18 @@ class UploadDisplayPictureView(APIView):
 
         result = upload_to_cloudinary(file, 'profile_pictures')
 
-        # Save the file reference on the KYC model
-        kyc.display_picture = file
-        kyc.save(update_fields=['display_picture'])
-
-        # Return both original and optimized URLs
+        secure_url = result.get('secure_url')
         public_id = result.get('public_id')
+
+        # Store the Cloudinary URL string directly — do NOT re-assign the raw file
+        # object, which would trigger a second upload with an exhausted file pointer.
+        if secure_url:
+            type(kyc).objects.filter(pk=kyc.pk).update(display_picture=secure_url)
+
         return Response({
             'success': True,
             'data': {
-                'display_picture': result.get('secure_url') or (kyc.display_picture.url if kyc.display_picture else None),
+                'display_picture': secure_url,
                 'optimized_url': get_optimized_url(public_id, preset='profile') if public_id else None,
                 'thumbnail_url': get_optimized_url(public_id, preset='thumbnail') if public_id else None,
             },
