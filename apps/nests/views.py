@@ -163,6 +163,49 @@ class NestViewSet(ViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=True, methods=["get"], url_path="eaglets",
+            permission_classes=[IsAuthenticated, IsEagleOrAdmin])
+    def eaglets(self, request, pk=None):
+        """List active Eaglets in this Nest (for the award points modal dropdown)."""
+        from .models import Nest, NestMembership
+        try:
+            nest = Nest.objects.get(pk=pk)
+        except Nest.DoesNotExist:
+            return Response(
+                {"success": False, "error": {"message": "Nest not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Eagles can only see eaglets in their own nests; admins see all
+        if request.user.role == "eagle" and nest.eagle != request.user:
+            return Response(
+                {"success": False, "error": {"message": "You do not own this Nest."}},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        memberships = (
+            NestMembership.objects
+            .filter(nest=nest, status="active")
+            .exclude(user=nest.eagle)
+            .select_related("user")
+        )
+        data = [
+            {
+                "id": str(m.user.id),
+                "first_name": m.user.first_name,
+                "last_name": m.user.last_name,
+                "full_name": m.user.get_full_name(),
+                "email": m.user.email,
+                "avatar_url": (
+                    m.user.avatar.url
+                    if m.user.avatar
+                    else m.user.profile_picture_url or None
+                ),
+            }
+            for m in memberships
+        ]
+        return Response({"success": True, "data": data})
+
     @action(detail=False, methods=["get"], url_path="my")
     def my_nests(self, request):
         """List nests the current eaglet belongs to."""

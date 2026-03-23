@@ -28,6 +28,10 @@ class ContentModule(SoftDeleteMixin, TimestampMixin, models.Model):
         INTERMEDIATE = "intermediate", "Intermediate"
         ADVANCED = "advanced", "Advanced"
 
+    class Visibility(models.TextChoices):
+        ALL_MENTEES = "all_mentees", "All Mentees"
+        NEST_ONLY = "nest_only", "Nest Only"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
@@ -56,6 +60,12 @@ class ContentModule(SoftDeleteMixin, TimestampMixin, models.Model):
     points_value = models.PositiveIntegerField(
         default=0,
         help_text="Bonus points awarded on module completion.",
+    )
+    visibility = models.CharField(
+        max_length=15,
+        choices=Visibility.choices,
+        default=Visibility.NEST_ONLY,
+        help_text="all_mentees: appears in Resource Center. nest_only: appears in Assignments/Learning Modules.",
     )
 
     class Meta:

@@ -77,6 +77,7 @@ class AnalyticsService:
             eaglets_performance.append({
                 "id": str(membership.user.id),
                 "name": membership.user.full_name,
+                "nest_id": str(membership.nest.id),
                 "nest_name": membership.nest.name,
                 "progress": membership.progress_percentage,
                 "status": membership.user.status,
