@@ -5,7 +5,6 @@
     "dockerBuildTarget": "production"
   },
   "deploy": {
-    "startCommand": "/app/start.sh",
     "healthcheckPath": "/api/v1/health/",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
