@@ -210,9 +210,15 @@ AWS_S3_FILE_OVERWRITE = False
 CLOUDINARY_API_KEY = config('CLOUDINARY_API_KEY', default='')
 
 if AWS_ACCESS_KEY_ID:
-    # Use S3 for static and media in production
-    STATICFILES_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+    # Use S3 for static and media in production (Django 5.2+ STORAGES dict)
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        },
+        "staticfiles": {
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        },
+    }
     STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/static/'
     MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
 elif CLOUDINARY_API_KEY:
@@ -237,7 +243,15 @@ elif CLOUDINARY_API_KEY:
         'flags': 'progressive',
     }
 
-    DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+    # Django 5.2+ STORAGES dict — replaces deprecated DEFAULT_FILE_STORAGE
+    STORAGES = {
+        "default": {
+            "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
 
     CLOUDINARY_FOLDERS = {
         'profile_pictures': 'eaglesneaglets/images/profile_pictures',

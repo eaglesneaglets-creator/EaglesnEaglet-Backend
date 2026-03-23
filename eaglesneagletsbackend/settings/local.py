@@ -192,8 +192,15 @@ CLOUDINARY_OPTIMIZATION = {
     'flags': 'progressive',
 }
 
-# Use Cloudinary as default file storage for media files
-DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+# Use Cloudinary as default file storage for media files (Django 5.2+ STORAGES dict)
+STORAGES = {
+    "default": {
+        "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 # Cloudinary folder mapping (used by upload helpers)
 CLOUDINARY_FOLDERS = {
