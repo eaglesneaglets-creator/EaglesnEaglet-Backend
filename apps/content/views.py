@@ -57,8 +57,9 @@ class ContentModuleViewSet(ViewSet):
         """List modules for a nest."""
         nest_id = request.query_params.get("nest")
         created_by_id = request.query_params.get("created_by")
+        visibility = request.query_params.get("visibility")
         modules = ContentService.get_nest_modules(
-            nest_id, request.user, created_by_id=created_by_id
+            nest_id, request.user, created_by_id=created_by_id, visibility=visibility
         )
         paginator = StandardResultsSetPagination()
         page = paginator.paginate_queryset(modules, request)

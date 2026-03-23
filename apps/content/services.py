@@ -124,8 +124,14 @@ class ContentService:
         return module
 
     @staticmethod
-    def get_nest_modules(nest_id: str, user=None, created_by_id: str = None):
-        """Return modules for a Nest (plus globals) or by creator."""
+    def get_nest_modules(nest_id: str, user=None, created_by_id: str = None, visibility: str = None):
+        """Return modules for a Nest (plus globals) or by creator.
+
+        Args:
+            visibility: If provided ('all_mentees' or 'nest_only'), filter by that value.
+                        Resource Center passes 'all_mentees'; Learning Center passes 'nest_only'.
+                        Eagles/admins fetching by created_by get all visibility values.
+        """
         if created_by_id:
             qs = ContentModule.objects.filter(created_by_id=created_by_id)
         elif nest_id:
@@ -137,6 +143,9 @@ class ContentService:
 
         if user and user.role == "eaglet":
             qs = qs.filter(is_published=True)
+
+        if visibility:
+            qs = qs.filter(visibility=visibility)
 
         return qs.select_related("created_by", "nest").prefetch_related("items")
 

@@ -56,6 +56,7 @@ class ContentModuleListSerializer(serializers.ModelSerializer):
             "order", "points_value", "item_count", "total_duration_minutes",
             "created_by_name", "created_at", "progress", "status",
             "primary_type", "thumbnail_url", "has_quiz", "resource_gate_cleared",
+            "visibility",
         ]
         read_only_fields = fields
 
@@ -86,7 +87,7 @@ class ContentModuleDetailSerializer(serializers.ModelSerializer):
             "is_published", "order", "points_value", "items",
             "item_count", "total_duration_minutes",
             "created_by", "created_at", "updated_at",
-            "primary_type", "thumbnail_url", "has_quiz",
+            "primary_type", "thumbnail_url", "has_quiz", "visibility",
         ]
         read_only_fields = fields
 
@@ -105,6 +106,9 @@ class ContentModuleCreateSerializer(serializers.Serializer):
     order = serializers.IntegerField(default=0, min_value=0)
     points_value = serializers.IntegerField(default=0, min_value=0)
     is_published = serializers.BooleanField(default=False, required=False)
+    visibility = serializers.ChoiceField(
+        choices=ContentModule.Visibility.choices, default="nest_only", required=False
+    )
     thumbnail = serializers.ImageField(required=False, allow_null=True)
 
 

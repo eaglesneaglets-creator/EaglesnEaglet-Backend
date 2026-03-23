@@ -335,6 +335,7 @@ class PointService:
                 notification_type="badge_earned",
                 title=f"Badge Earned: {badge.name}",
                 message=badge.description,
+                action_url="/points/badges",
             )
         except Exception as exc:
             logger.warning("Badge notification failed: %s", exc)
