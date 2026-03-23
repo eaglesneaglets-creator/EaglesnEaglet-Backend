@@ -470,13 +470,11 @@ class MentorKYC(TimestampMixin):
     # =========================================================================
     # NEW: Personal Information (PM Requirements)
     # =========================================================================
-    display_picture = models.ImageField(
-        upload_to='eaglesneaglets/images/profile_pictures/',
+    display_picture = models.URLField(
         blank=True,
         null=True,
         max_length=500,
-        validators=[validate_image_file],
-        help_text='Profile display picture (required)'
+        help_text='Cloudinary secure_url of the profile picture'
     )
     location = models.CharField(
         max_length=200,
@@ -509,12 +507,11 @@ class MentorKYC(TimestampMixin):
         blank=True,
         help_text='Profile description / bio about mentor experience and expertise'
     )
-    cv = models.FileField(
-        upload_to='eaglesneaglets/documents/cvs/',
+    cv = models.URLField(
         blank=True,
         null=True,
-        validators=[validate_cv_file],
-        help_text='Curriculum Vitae (PDF/DOCX)'
+        max_length=500,
+        help_text='Cloudinary secure_url of the CV'
     )
     mentorship_types = models.JSONField(
         default=list,
@@ -561,11 +558,11 @@ class MentorKYC(TimestampMixin):
         blank=True,
         help_text='Brief spiritual journey/testimony (max 500 words)'
     )
-    recommendation_letter = models.FileField(
-        upload_to='eaglesneaglets/documents/recommendations/',
+    recommendation_letter = models.URLField(
         blank=True,
         null=True,
-        help_text='Recommendation letter from pastor or ministry leader'
+        max_length=500,
+        help_text='Cloudinary secure_url of the recommendation letter'
     )
 
     # =========================================================================
@@ -936,13 +933,11 @@ class MenteeKYC(TimestampMixin):
     # =========================================================================
     # Personal Information
     # =========================================================================
-    display_picture = models.ImageField(
-        upload_to='eaglesneaglets/images/profile_pictures/',
+    display_picture = models.URLField(
         blank=True,
         null=True,
         max_length=500,
-        validators=[validate_image_file],
-        help_text='Profile display picture (required)'
+        help_text='Cloudinary secure_url of the profile picture'
     )
     national_id_number = models.CharField(
         max_length=50,
@@ -996,12 +991,11 @@ class MenteeKYC(TimestampMixin):
         validators=[validate_linkedin_url],
         help_text='LinkedIn profile URL (optional)'
     )
-    cv = models.FileField(
-        upload_to='eaglesneaglets/documents/cvs/',
+    cv = models.URLField(
         blank=True,
         null=True,
-        validators=[validate_cv_file],
-        help_text='Curriculum Vitae (optional, PDF/DOCX)'
+        max_length=500,
+        help_text='Cloudinary secure_url of the CV'
     )
 
     # =========================================================================

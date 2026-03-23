@@ -585,9 +585,7 @@ class MentorKYCListSerializer(serializers.ModelSerializer):
         ]
 
     def get_display_picture_url(self, obj):
-        if obj.display_picture:
-            return obj.display_picture.url if hasattr(obj.display_picture, 'url') else str(obj.display_picture)
-        return None
+        return obj.display_picture or None
 
     def get_days_pending(self, obj):
         """Calculate days since submission."""
@@ -691,10 +689,7 @@ class MentorKYCDetailSerializer(serializers.ModelSerializer):
         return None
 
     def get_cv_url(self, obj):
-        """Get the full URL for the CV."""
-        if obj.cv:
-            return obj.cv.url if hasattr(obj.cv, 'url') else str(obj.cv)
-        return None
+        return obj.cv or None
 
 
 class KYCApprovalSerializer(serializers.Serializer):

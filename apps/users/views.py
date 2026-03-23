@@ -735,14 +735,17 @@ class UploadGovernmentIDView(APIView):
                 }
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Save the file
-        kyc.government_id = file
-        kyc.save(update_fields=['government_id'])
+        # Upload to Cloudinary and store the secure_url directly
+        from core.storage import upload_to_cloudinary
+        result = upload_to_cloudinary(file, 'government_ids')
+        secure_url = result.get('secure_url')
+        if secure_url:
+            type(kyc).objects.filter(pk=kyc.pk).update(government_id=secure_url)
 
         return Response({
             'success': True,
             'data': {
-                'government_id': kyc.government_id.url if kyc.government_id else None
+                'government_id': secure_url
             },
             'message': 'Government ID uploaded successfully.'
         })
@@ -807,14 +810,17 @@ class UploadRecommendationView(APIView):
                 }
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Save the file
-        kyc.recommendation_letter = file
-        kyc.save(update_fields=['recommendation_letter'])
+        # Upload to Cloudinary and store the secure_url directly
+        from core.storage import upload_to_cloudinary
+        result = upload_to_cloudinary(file, 'recommendations')
+        secure_url = result.get('secure_url')
+        if secure_url:
+            type(kyc).objects.filter(pk=kyc.pk).update(recommendation_letter=secure_url)
 
         return Response({
             'success': True,
             'data': {
-                'recommendation_letter': kyc.recommendation_letter.url if kyc.recommendation_letter else None
+                'recommendation_letter': secure_url
             },
             'message': 'Recommendation letter uploaded successfully.'
         })
@@ -1240,10 +1246,9 @@ class UploadDisplayPictureView(APIView):
         secure_url = result.get('secure_url')
         public_id = result.get('public_id')
 
-        # Store the public_id (not the full URL) — django-cloudinary-storage
-        # reconstructs the URL from the public_id on field access via .url
-        if public_id:
-            type(kyc).objects.filter(pk=kyc.pk).update(display_picture=public_id)
+        # Store secure_url directly — display_picture is now a URLField
+        if secure_url:
+            type(kyc).objects.filter(pk=kyc.pk).update(display_picture=secure_url)
 
         return Response({
             'success': True,
@@ -1330,14 +1335,17 @@ class UploadCVView(APIView):
                 }
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Save the file
-        kyc.cv = file
-        kyc.save(update_fields=['cv'])
+        # Upload to Cloudinary and store the secure_url directly
+        from core.storage import upload_to_cloudinary
+        result = upload_to_cloudinary(file, 'cvs')
+        secure_url = result.get('secure_url')
+        if secure_url:
+            type(kyc).objects.filter(pk=kyc.pk).update(cv=secure_url)
 
         return Response({
             'success': True,
             'data': {
-                'cv': kyc.cv.url if kyc.cv else None
+                'cv': secure_url
             },
             'message': 'CV uploaded successfully.'
         })
