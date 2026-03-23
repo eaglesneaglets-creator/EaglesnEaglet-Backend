@@ -474,6 +474,7 @@ class MentorKYC(TimestampMixin):
         upload_to='eaglesneaglets/images/profile_pictures/',
         blank=True,
         null=True,
+        max_length=500,
         validators=[validate_image_file],
         help_text='Profile display picture (required)'
     )
@@ -939,6 +940,7 @@ class MenteeKYC(TimestampMixin):
         upload_to='eaglesneaglets/images/profile_pictures/',
         blank=True,
         null=True,
+        max_length=500,
         validators=[validate_image_file],
         help_text='Profile display picture (required)'
     )
