@@ -1240,10 +1240,10 @@ class UploadDisplayPictureView(APIView):
         secure_url = result.get('secure_url')
         public_id = result.get('public_id')
 
-        # Store the Cloudinary URL string directly — do NOT re-assign the raw file
-        # object, which would trigger a second upload with an exhausted file pointer.
-        if secure_url:
-            type(kyc).objects.filter(pk=kyc.pk).update(display_picture=secure_url)
+        # Store the public_id (not the full URL) — django-cloudinary-storage
+        # reconstructs the URL from the public_id on field access via .url
+        if public_id:
+            type(kyc).objects.filter(pk=kyc.pk).update(display_picture=public_id)
 
         return Response({
             'success': True,
