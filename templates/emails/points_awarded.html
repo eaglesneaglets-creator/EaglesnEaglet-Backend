@@ -1,0 +1,24 @@
+{% extends "emails/base.html" %}
+
+{% block title %}You earned points! — Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2>You earned points!</h2>
+<p>Hi {{ user.first_name }},</p>
+<p>Congratulations! Your mentor has awarded you points for your progress.</p>
+
+<div class="info-box" style="text-align: center;">
+    <p style="font-size: 48px; font-weight: 900; color: #16A34A; margin: 0; line-height: 1;">+{{ points }}</p>
+    <p style="font-size: 13px; font-weight: 600; color: #166534; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 0.05em;">Points Earned</p>
+</div>
+
+{% if description %}
+<p><strong>Reason:</strong> {{ description }}</p>
+{% endif %}
+
+<p style="text-align: center;">
+    <a href="{{ frontend_url }}/points" class="button">View Your Points</a>
+</p>
+
+<p style="color: #6B7280; font-size: 14px;">Keep up the great work and continue earning points for your mentorship activities!</p>
+{% endblock %}

@@ -15,6 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Application definition
 DJANGO_APPS = [
+    'daphne',  # MUST be before django.contrib.staticfiles — replaces runserver with ASGI server
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -24,6 +25,7 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    'channels',
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',

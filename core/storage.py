@@ -68,13 +68,12 @@ def upload_to_cloudinary(file, file_type: str, **kwargs):
         resource_type = 'image'
     elif file_type == 'videos':
         resource_type = 'video'
-    elif filename.endswith('.pdf'):
-        resource_type = 'image'  # PDFs can be treated as images to get thumbnails
     elif (
+        filename.endswith('.pdf') or
         file_type in ('cvs', 'government_ids', 'recommendations', 'misc') or
         filename.endswith(('.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'))
     ):
-        resource_type = 'raw'
+        resource_type = 'raw'  # PDFs and documents must be 'raw' for direct public URL access
 
     upload_options = {
         'folder': folder,
@@ -94,7 +93,6 @@ def upload_to_cloudinary(file, file_type: str, **kwargs):
     # Apply video-specific optimizations
     if resource_type == 'video':
         upload_options.update({
-            'quality': 'auto',          # Automatic quality
             'resource_type': 'video',
         })
 
@@ -103,6 +101,8 @@ def upload_to_cloudinary(file, file_type: str, **kwargs):
     try:
         result = cloudinary.uploader.upload(file, **upload_options)
     except CloudinaryError as exc:
+        import logging
+        logging.getLogger(__name__).error("Cloudinary upload error (%s %s): %s", resource_type, file_type, exc)
         raise DRFValidationError(
             detail={"file": "File upload failed. Please check your connection and try again."}
         ) from exc
@@ -238,6 +238,7 @@ def get_pdf_thumbnail(public_id: str, width: int = 640, height: int = 800) -> st
         }],
     )
     return url
+
 
 
 def delete_from_cloudinary(public_id: str, resource_type: str = 'image'):

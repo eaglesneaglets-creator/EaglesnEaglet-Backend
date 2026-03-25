@@ -26,15 +26,17 @@ class SecurityHeadersMiddleware:
         # Content Security Policy
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline'",
+            "script-src 'self'",                                    # removed 'unsafe-inline' — XSS protection
+            "style-src 'self' 'unsafe-inline'",                     # kept for Django admin CSS
             "img-src 'self' data: https:",
             "font-src 'self' https://fonts.gstatic.com",
-            "connect-src 'self' https://*.cloudinary.com",
+            "connect-src 'self' https://*.cloudinary.com wss://*.up.railway.app",  # added wss for WebSocket
+            "media-src 'self' https://res.cloudinary.com",          # video/audio from Cloudinary
             "frame-src 'self' https://*.cloudinary.com",
-            "frame-ancestors 'self'",
+            "frame-ancestors 'none'",                               # tightened: prevent clickjacking
             "base-uri 'self'",
             "form-action 'self'",
+            "upgrade-insecure-requests",
         ]
         response['Content-Security-Policy'] = '; '.join(csp_directives)
 
@@ -106,12 +108,16 @@ class RateLimitByIPMiddleware:
         return self.get_response(request)
 
     def get_client_ip(self, request):
-        """Get the real client IP, considering proxies."""
+        """
+        Return the real client IP.
+        Railway injects the real IP as the LAST entry in X-Forwarded-For.
+        Never trust the first entry — it can be spoofed by the client.
+        """
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
         if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0].strip()
+            ip = x_forwarded_for.split(',')[-1].strip()
         else:
-            ip = request.META.get('REMOTE_ADDR')
+            ip = request.META.get('REMOTE_ADDR', '127.0.0.1')
         return ip
 
 
@@ -162,7 +168,12 @@ class SQLInjectionProtectionMiddleware:
         return self.get_response(request)
 
     def get_client_ip(self, request):
+        """
+        Return the real client IP.
+        Railway injects the real IP as the LAST entry in X-Forwarded-For.
+        Never trust the first entry — it can be spoofed by the client.
+        """
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
         if x_forwarded_for:
-            return x_forwarded_for.split(',')[0].strip()
-        return request.META.get('REMOTE_ADDR')
+            return x_forwarded_for.split(',')[-1].strip()
+        return request.META.get('REMOTE_ADDR', '127.0.0.1')

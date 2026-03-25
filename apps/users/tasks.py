@@ -6,6 +6,7 @@ Asynchronous tasks for email sending and other background operations.
 
 import logging
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
@@ -21,7 +22,7 @@ def _frontend_url():
     return settings.FRONTEND_URL
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_verification_email(self, user_id):
     """
     Send email verification email to user.
@@ -63,12 +64,19 @@ def send_verification_email(self, user_id):
 
         logger.info(f"Verification email sent to {user.email}")
 
+    except SoftTimeLimitExceeded:
+        logger.error("Verification email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("Verification email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send verification email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send verification email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_password_reset_email(self, user_id):
     """
     Send password reset email to user.
@@ -107,12 +115,19 @@ def send_password_reset_email(self, user_id):
 
         logger.info(f"Password reset email sent to {user.email}")
 
+    except SoftTimeLimitExceeded:
+        logger.error("Password reset email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("Password reset email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send password reset email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send password reset email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_kyc_submitted_email(self, user_id):
     """
     Send KYC submission confirmation email to mentor.
@@ -151,12 +166,19 @@ def send_kyc_submitted_email(self, user_id):
 
         logger.info(f"KYC submitted email sent to {user.email}")
 
+    except SoftTimeLimitExceeded:
+        logger.error("KYC submitted email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("KYC submitted email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send KYC submitted email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send KYC submitted email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_kyc_approved_email(self, user_id):
     """
     Send KYC approval email to mentor.
@@ -194,12 +216,19 @@ def send_kyc_approved_email(self, user_id):
 
         logger.info(f"KYC approved email sent to {user.email}")
 
+    except SoftTimeLimitExceeded:
+        logger.error("KYC approved email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("KYC approved email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send KYC approved email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send KYC approved email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_kyc_rejected_email(self, user_id, rejection_reason):
     """
     Send KYC rejection email to mentor.
@@ -239,12 +268,19 @@ def send_kyc_rejected_email(self, user_id, rejection_reason):
 
         logger.info(f"KYC rejected email sent to {user.email}")
 
+    except SoftTimeLimitExceeded:
+        logger.error("KYC rejected email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("KYC rejected email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send KYC rejected email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send KYC rejected email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_welcome_email(self, user_id):
     """
     Send welcome email after successful email verification.
@@ -282,12 +318,19 @@ def send_welcome_email(self, user_id):
 
         logger.info(f"Welcome email sent to {user.email}")
 
+    except SoftTimeLimitExceeded:
+        logger.error("Welcome email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("Welcome email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send welcome email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send welcome email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_eaglet_welcome_email(self, user_id):
     """
     Send welcome email to eaglet after completing onboarding.
@@ -327,12 +370,19 @@ def send_eaglet_welcome_email(self, user_id):
 
         logger.info(f"Eaglet welcome email sent to {user.email}")
 
+    except SoftTimeLimitExceeded:
+        logger.error("Eaglet welcome email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("Eaglet welcome email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send eaglet welcome email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send eaglet welcome email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_kyc_changes_requested_email(self, user_id, review_notes):
     """
     Send email to mentor when changes are requested on their KYC application.
@@ -372,16 +422,23 @@ def send_kyc_changes_requested_email(self, user_id, review_notes):
 
         logger.info(f"KYC changes requested email sent to {user.email}")
 
+    except SoftTimeLimitExceeded:
+        logger.error("KYC changes requested email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("KYC changes requested email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send KYC changes requested email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send KYC changes requested email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
 # =============================================================================
 # NEW PROFILE TASKS (For both Mentor and Mentee KYC)
 # =============================================================================
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_profile_submitted_email(self, user_id, role):
     """
     Send profile submission confirmation email to user (mentor or mentee).
@@ -422,12 +479,19 @@ def send_profile_submitted_email(self, user_id, role):
 
         logger.info(f"Profile submitted email sent to {user.email} ({role})")
 
+    except SoftTimeLimitExceeded:
+        logger.error("Profile submitted email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("Profile submitted email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send profile submitted email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send profile submitted email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_profile_approved_email(self, user_id, role):
     """
     Send profile approval email to user (mentor or mentee).
@@ -470,12 +534,19 @@ def send_profile_approved_email(self, user_id, role):
 
         logger.info(f"Profile approved email sent to {user.email} ({role})")
 
+    except SoftTimeLimitExceeded:
+        logger.error("Profile approved email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("Profile approved email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send profile approved email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send profile approved email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_profile_rejected_email(self, user_id, role, rejection_reason):
     """
     Send profile rejection email to user (mentor or mentee).
@@ -512,12 +583,19 @@ def send_profile_rejected_email(self, user_id, role, rejection_reason):
 
         logger.info(f"Profile rejected email sent to {user.email} ({role})")
 
+    except SoftTimeLimitExceeded:
+        logger.error("Profile rejected email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("Profile rejected email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send profile rejected email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send profile rejected email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, soft_time_limit=60, time_limit=90)
 def send_profile_changes_requested_email(self, user_id, role, review_notes):
     """
     Send email when changes are requested on a profile (mentor or mentee).
@@ -559,6 +637,13 @@ def send_profile_changes_requested_email(self, user_id, role, review_notes):
 
         logger.info(f"Profile changes requested email sent to {user.email} ({role})")
 
+    except SoftTimeLimitExceeded:
+        logger.error("Profile changes requested email task timed out for user %s — aborting.", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("Profile changes requested email skipped — user %s no longer exists.", user_id)
+        return
     except Exception as exc:
-        logger.error(f"Failed to send profile changes requested email to user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60)
+        logger.error("Failed to send profile changes requested email to user %s (attempt %d): %s",
+                     user_id, self.request.retries + 1, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))

@@ -169,8 +169,19 @@ class ContentItemViewSet(ViewSet):
                 {"success": False, "error": {"message": "Module not found."}},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        if not module.nest or user.role == "admin" or module.nest.eagle_id == user.id:
+        # Admin always has access
+        if user.role == "admin":
             return module, None
+        # No nest = global module, always accessible
+        if not module.nest:
+            return module, None
+        # Nest owner always has access to their own modules
+        if module.nest.eagle_id == user.id:
+            return module, None
+        # Platform-wide published modules (Resource Center) are accessible to all authenticated users
+        if module.is_published and module.visibility == "all_mentees":
+            return module, None
+        # Nest members can access nest-scoped modules
         if NestMembership.objects.filter(nest=module.nest, user=user, status="active").exists():
             return module, None
         return None, Response(

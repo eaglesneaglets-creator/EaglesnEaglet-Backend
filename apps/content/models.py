@@ -199,6 +199,10 @@ class Assignment(TimestampMixin, models.Model):
     class Meta:
         db_table = "assignments"
         ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["nest", "assignment_type"]),  # list filtering by type
+            models.Index(fields=["nest", "created_by"]),       # eagle's assignments in a nest
+        ]
 
     def __str__(self) -> str:
         return self.title

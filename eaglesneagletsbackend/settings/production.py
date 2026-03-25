@@ -18,10 +18,18 @@ SECRET_KEY = config('SECRET_KEY')
 
 DEBUG = False
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv(), default='*') + [
+_allowed_hosts = config('ALLOWED_HOSTS', cast=Csv(), default='')
+ALLOWED_HOSTS = [h for h in _allowed_hosts if h] + [
     'healthcheck.railway.app',
     '.up.railway.app',
 ]
+if not any(h for h in ALLOWED_HOSTS if h not in ('healthcheck.railway.app', '.up.railway.app')):
+    import warnings
+    warnings.warn(
+        "ALLOWED_HOSTS env var is not set. Add your Railway backend domain to ALLOWED_HOSTS.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 
 # =============================================================================
@@ -292,6 +300,64 @@ ADMINS = [
     ('Admin', config('ADMIN_EMAIL', default='admin@eaglesneaglets.com')),
 ]
 MANAGERS = ADMINS
+
+
+# =============================================================================
+# LOGGING — Production: structured output for Railway log aggregation
+# =============================================================================
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {message}',
+            'style': '{',
+        },
+    },
+    'filters': {
+        'require_debug_false': {
+            '()': 'django.utils.log.RequireDebugFalse',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'mail_admins': {
+            'level': 'ERROR',
+            'class': 'django.utils.log.AdminEmailHandler',
+            'filters': ['require_debug_false'],
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'django.security': {
+            'handlers': ['console', 'mail_admins'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'apps': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'celery': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
 
 
 # =============================================================================

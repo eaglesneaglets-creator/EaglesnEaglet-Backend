@@ -39,7 +39,17 @@ class AnalyticsService:
     @staticmethod
     def get_eagle_dashboard_stats(eagle) -> dict:
         """Stats for the Eagle (mentor) dashboard."""
-        owned_nests = Nest.objects.filter(eagle=eagle)
+        cache_key = f"eagle_stats_{eagle.id}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        owned_nests = Nest.objects.filter(eagle=eagle).annotate(
+            _member_count=Count(
+                'memberships',
+                filter=Q(memberships__status='active') & ~Q(memberships__user=eagle)
+            )
+        )
         nest_ids = list(owned_nests.values_list("id", flat=True))
 
         total_eaglets = NestMembership.objects.filter(
@@ -63,8 +73,8 @@ class AnalyticsService:
             nest_summaries.append({
                 "id": str(nest.id),
                 "name": nest.name,
-                "member_count": nest.member_count,
-                "is_full": nest.is_full,
+                "member_count": nest._member_count,                   # from annotation, no extra SQL
+                "is_full": nest._member_count >= nest.max_members,    # pure Python
             })
 
         # Performance list for Eagle dashboard
@@ -101,20 +111,27 @@ class AnalyticsService:
                 "link": event.meeting_link,
             })
 
-        return {
+        result = {
             "total_eaglets": total_eaglets,
             "pending_requests": pending_requests,
             "total_modules": total_modules,
             "points_awarded": points_awarded,
             "nests": nest_summaries,
-            "active_nests": owned_nests.filter(is_active=True).count(),
+            "active_nests": sum(1 for n in owned_nests if n.is_active),  # queryset already evaluated
             "eaglets": eaglets_performance,
             "upcoming_sessions": upcoming_sessions,
         }
+        cache.set(cache_key, result, timeout=300)  # 5-minute cache
+        return result
 
     @staticmethod
     def get_eaglet_dashboard_stats(eaglet) -> dict:
         """Stats for the Eaglet (mentee) dashboard."""
+        cache_key = f"eaglet_stats_{eaglet.id}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
         total_points = PointService.get_user_total_points(eaglet)
         streak = PointService.get_user_streak(eaglet)
 
@@ -201,7 +218,7 @@ class AnalyticsService:
             else:
                 weekly_checkins.append(False)
 
-        return {
+        result = {
             "points": total_points,  # Aliased for frontend
             "total_points": total_points,
             "streak": streak,        # Aliased for frontend
@@ -216,40 +233,45 @@ class AnalyticsService:
             "weekly_checkins": weekly_checkins,
             "has_checked_in_today": today in checkin_dates,
         }
+        cache.set(cache_key, result, timeout=300)  # 5-minute cache
+        return result
 
     @staticmethod
     def get_admin_dashboard_stats() -> dict:
         """Stats for the Admin dashboard."""
-        total_users = User.objects.count()
+        cache_key = "admin_stats_global"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        # Single aggregation for user stats (total + new this month in one query)
+        month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        user_stats = User.objects.aggregate(
+            total=Count('id'),
+            new_this_month=Count('id', filter=Q(date_joined__gte=month_start)),
+        )
+
+        # Role breakdown — one query
+        role_counts = dict(
+            User.objects.values_list("role").annotate(count=Count("id")).order_by()
+        )
+
         active_nests = Nest.objects.filter(is_active=True).count()
 
-        # User role breakdown
-        role_counts = dict(
-            User.objects.values_list("role")
-            .annotate(count=Count("id"))
-            .order_by()
-        )
-
-        # Growth: new users this month
-        month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0)
-        new_users_this_month = User.objects.filter(
-            date_joined__gte=month_start
-        ).count()
-
-        # Pending KYC
+        # Pending KYC — two separate COUNT queries (each is a single fast query)
         from apps.users.models import MentorKYC, MenteeKYC
-        pending_kyc = (
-            MentorKYC.objects.filter(status="submitted").count()
-            + MenteeKYC.objects.filter(status="submitted").count()
-        )
+        pending_mentor_kyc = MentorKYC.objects.filter(status="submitted").count()
+        pending_mentee_kyc = MenteeKYC.objects.filter(status="submitted").count()
 
-        return {
-            "total_users": total_users,
+        result = {
+            "total_users": user_stats['total'],
             "active_nests": active_nests,
             "role_counts": role_counts,
-            "new_users_this_month": new_users_this_month,
-            "pending_kyc": pending_kyc,
+            "new_users_this_month": user_stats['new_this_month'],
+            "pending_kyc": pending_mentor_kyc + pending_mentee_kyc,
         }
+        cache.set(cache_key, result, timeout=120)  # 2-minute cache for admin stats
+        return result
 
     @staticmethod
     def get_nest_analytics(nest_id: str) -> dict:
@@ -262,15 +284,18 @@ class AnalyticsService:
         total_modules = modules.count()
         published_modules = modules.filter(is_published=True).count()
 
-        # Average completion across all members
-        progress_qs = ContentProgress.objects.filter(
+        # Average completion across all members — single aggregate query
+        progress_stats = ContentProgress.objects.filter(
             content_item__module__nest_id=nest_id
+        ).aggregate(
+            total=Count('id'),
+            completed=Count('id', filter=Q(status='completed')),
         )
         completion_rate = 0
-        total_progress = progress_qs.count()
-        if total_progress > 0:
-            completed = progress_qs.filter(status="completed").count()
-            completion_rate = round((completed / total_progress) * 100, 1)
+        if progress_stats['total'] > 0:
+            completion_rate = round(
+                (progress_stats['completed'] / progress_stats['total']) * 100, 1
+            )
 
         total_points = PointTransaction.objects.filter(
             nest_id=nest_id
