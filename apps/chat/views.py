@@ -105,3 +105,14 @@ class NestConversationView(APIView):
         conversation = ChatService.get_or_create_nest_conversation(nest)
         serializer = ConversationSerializer(conversation, context={"request": request})
         return Response({"success": True, "data": serializer.data})
+
+
+class ChattableContactsView(APIView):
+    """GET /chat/contacts/ — users the caller can start a DM with."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .serializers import UserMinimalSerializer
+        contacts = ChatService.get_chattable_contacts(request.user)
+        serializer = UserMinimalSerializer(contacts, many=True)
+        return Response({"success": True, "data": serializer.data})

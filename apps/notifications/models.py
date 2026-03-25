@@ -26,6 +26,9 @@ class Notification(models.Model):
         GENERAL = "general", "General"
         POST_LIKE = "post_like", "Post Liked"
         POST_COMMENT = "post_comment", "Post Commented"
+        CHAT_MESSAGE = "chat_message", "Chat Message"
+        ORDER_CONFIRMED = "order_confirmed", "Order Confirmed"
+        PAYMENT_RECEIVED = "payment_received", "Payment Received"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     recipient = models.ForeignKey(

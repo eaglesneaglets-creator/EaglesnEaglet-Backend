@@ -58,5 +58,8 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
             from channels.db import database_sync_to_async
             from apps.users.models import User
             return await database_sync_to_async(User.objects.get)(id=user_id)
-        except (InvalidToken, TokenError, Exception):
+        except (InvalidToken, TokenError):
+            return None
+        except Exception:
+            logger.exception("Unexpected error during NotificationConsumer authentication")
             return None

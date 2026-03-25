@@ -133,7 +133,10 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             user_id = token["user_id"]
             from apps.users.models import User
             return await database_sync_to_async(User.objects.get)(id=user_id)
-        except (InvalidToken, TokenError, Exception):
+        except (InvalidToken, TokenError):
+            return None
+        except Exception:
+            logger.exception("Unexpected error during ChatConsumer authentication")
             return None
 
     async def _is_participant(self, user, conversation_id: str) -> bool:

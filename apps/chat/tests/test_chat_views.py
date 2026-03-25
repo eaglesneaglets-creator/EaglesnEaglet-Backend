@@ -115,3 +115,34 @@ class TestNestConversation:
         resp = api_client.get(f"/api/v1/chat/nest/{nest.id}/conversation/")
         assert resp.status_code == 200
         assert resp.data["data"]["conversation_type"] == "nest_group"
+
+
+class TestChattableContacts:
+    def test_unauthenticated_returns_401(self, api_client):
+        resp = api_client.get("/api/v1/chat/contacts/")
+        assert resp.status_code == 401
+
+    def test_eagle_sees_own_eaglets(self, api_client, eagle, eaglet, nest):
+        api_client.force_authenticate(user=eagle)
+        resp = api_client.get("/api/v1/chat/contacts/")
+        assert resp.status_code == 200
+        ids = [c["id"] for c in resp.data["data"]]
+        assert str(eaglet.id) in ids
+        assert str(eagle.id) not in ids  # should not include self
+
+    def test_eaglet_sees_mentors_and_peers(self, api_client, eagle, eaglet, nest):
+        # Create a second eaglet in the same nest
+        eaglet2 = User.objects.create_user(
+            email="eaglet2@test.com", password="pass123",
+            first_name="Eaglet", last_name="Two",
+            role="eaglet", is_email_verified=True,
+        )
+        NestMembership.objects.create(nest=nest, user=eaglet2, status="active")
+
+        api_client.force_authenticate(user=eaglet)
+        resp = api_client.get("/api/v1/chat/contacts/")
+        assert resp.status_code == 200
+        ids = [c["id"] for c in resp.data["data"]]
+        assert str(eagle.id) in ids      # mentor
+        assert str(eaglet2.id) in ids     # peer
+        assert str(eaglet.id) not in ids  # should not include self

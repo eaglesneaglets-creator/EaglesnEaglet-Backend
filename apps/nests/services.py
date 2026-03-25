@@ -219,8 +219,13 @@ class MembershipService:
 
     @staticmethod
     def get_nest_members(nest_id: str, status: Optional[str] = "active"):
-        """Return members of a Nest, optionally filtered by status."""
-        qs = NestMembership.objects.filter(nest_id=nest_id).select_related("user")
+        """Return members of a Nest, optionally filtered by status. Excludes the nest owner."""
+        qs = (
+            NestMembership.objects
+            .filter(nest_id=nest_id)
+            .exclude(user=F('nest__eagle'))
+            .select_related("user", "nest")
+        )
         if status:
             qs = qs.filter(status=status)
         return qs

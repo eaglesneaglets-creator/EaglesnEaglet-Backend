@@ -138,6 +138,10 @@ class ContentService:
             qs = ContentModule.objects.filter(
                 Q(nest_id=nest_id) | Q(nest__isnull=True)
             ).select_related("created_by", "nest").prefetch_related("items")
+        elif visibility == 'all_mentees':
+            # Platform-wide fetch: all modules with all_mentees visibility across every nest.
+            # Used by the Resource Center to show a global content library.
+            qs = ContentModule.objects.all().select_related("created_by", "nest").prefetch_related("items")
         else:
             qs = ContentModule.objects.filter(nest__isnull=True).select_related("created_by").prefetch_related("items")
 

@@ -64,9 +64,9 @@ CHANNEL_LAYERS = {
 REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = []
 
 
-# Celery - Run tasks synchronously
-CELERY_TASK_ALWAYS_EAGER = True
-CELERY_TASK_EAGER_PROPAGATES = True
+# Celery - Run tasks synchronously in tests (eager=False so retry logic is testable)
+CELERY_TASK_ALWAYS_EAGER = False
+CELERY_TASK_EAGER_PROPAGATES = False
 
 
 # Email - Use in-memory backend

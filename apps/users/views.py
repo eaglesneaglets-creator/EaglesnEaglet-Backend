@@ -737,7 +737,14 @@ class UploadGovernmentIDView(APIView):
 
         # Upload to Cloudinary and store the secure_url directly
         from core.storage import upload_to_cloudinary
-        result = upload_to_cloudinary(file, 'government_ids')
+        try:
+            result = upload_to_cloudinary(file, 'government_ids')
+        except Exception as exc:
+            logger.error("Cloudinary upload failed for government_id (user %s): %s", request.user.id, exc)
+            return Response({
+                'success': False,
+                'error': {'code': 503, 'type': 'UploadFailed', 'message': 'File upload failed. Please try again.'}
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         secure_url = result.get('secure_url')
         if secure_url:
             type(kyc).objects.filter(pk=kyc.pk).update(government_id=secure_url)
@@ -812,7 +819,14 @@ class UploadRecommendationView(APIView):
 
         # Upload to Cloudinary and store the secure_url directly
         from core.storage import upload_to_cloudinary
-        result = upload_to_cloudinary(file, 'recommendations')
+        try:
+            result = upload_to_cloudinary(file, 'recommendations')
+        except Exception as exc:
+            logger.error("Cloudinary upload failed for recommendation (user %s): %s", request.user.id, exc)
+            return Response({
+                'success': False,
+                'error': {'code': 503, 'type': 'UploadFailed', 'message': 'File upload failed. Please try again.'}
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         secure_url = result.get('secure_url')
         if secure_url:
             type(kyc).objects.filter(pk=kyc.pk).update(recommendation_letter=secure_url)
@@ -1240,8 +1254,14 @@ class UploadDisplayPictureView(APIView):
 
         # Upload via Cloudinary with optimization
         from core.storage import upload_to_cloudinary, get_optimized_url
-
-        result = upload_to_cloudinary(file, 'profile_pictures')
+        try:
+            result = upload_to_cloudinary(file, 'profile_pictures')
+        except Exception as exc:
+            logger.error("Cloudinary upload failed for display_picture (user %s): %s", request.user.id, exc)
+            return Response({
+                'success': False,
+                'error': {'code': 503, 'type': 'UploadFailed', 'message': 'File upload failed. Please try again.'}
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         secure_url = result.get('secure_url')
         public_id = result.get('public_id')
@@ -1337,7 +1357,14 @@ class UploadCVView(APIView):
 
         # Upload to Cloudinary and store the secure_url directly
         from core.storage import upload_to_cloudinary
-        result = upload_to_cloudinary(file, 'cvs')
+        try:
+            result = upload_to_cloudinary(file, 'cvs')
+        except Exception as exc:
+            logger.error("Cloudinary upload failed for CV (user %s): %s", request.user.id, exc)
+            return Response({
+                'success': False,
+                'error': {'code': 503, 'type': 'UploadFailed', 'message': 'File upload failed. Please try again.'}
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         secure_url = result.get('secure_url')
         if secure_url:
             type(kyc).objects.filter(pk=kyc.pk).update(cv=secure_url)

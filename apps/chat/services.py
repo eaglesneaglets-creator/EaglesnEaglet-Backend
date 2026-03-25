@@ -154,3 +154,46 @@ class ChatService:
         return Message.objects.filter(
             conversation=conversation,
         ).exclude(id__in=read_ids).count()
+
+    @staticmethod
+    def get_chattable_contacts(user):
+        """
+        Return users the logged-in user is allowed to message.
+        - Admin  → all other active users
+        - Eagle  → eaglets who are active members of this eagle's nests
+        - Eaglet → nest eagles (mentors), admins, and peers in shared nests
+        """
+        from apps.users.models import User
+        from apps.nests.models import Nest, NestMembership
+
+        if user.role == "admin":
+            return User.objects.exclude(id=user.id).filter(is_active=True)
+
+        if user.role == "eagle":
+            nest_ids = Nest.objects.filter(
+                eagle=user, is_active=True
+            ).values_list("id", flat=True)
+            eaglet_ids = (
+                NestMembership.objects.filter(nest_id__in=nest_ids, status="active")
+                .exclude(user=user)
+                .values_list("user_id", flat=True)
+            )
+            return User.objects.filter(id__in=eaglet_ids, is_active=True)
+
+        # Eaglet
+        my_nest_ids = NestMembership.objects.filter(
+            user=user, status="active"
+        ).values_list("nest_id", flat=True)
+        eagle_ids = Nest.objects.filter(
+            id__in=my_nest_ids, is_active=True
+        ).values_list("eagle_id", flat=True)
+        peer_ids = (
+            NestMembership.objects.filter(nest_id__in=my_nest_ids, status="active")
+            .exclude(user=user)
+            .values_list("user_id", flat=True)
+        )
+        admin_ids = User.objects.filter(
+            role="admin", is_active=True
+        ).values_list("id", flat=True)
+        all_ids = set(eagle_ids) | set(peer_ids) | set(admin_ids)
+        return User.objects.filter(id__in=all_ids, is_active=True)
