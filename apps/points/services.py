@@ -185,7 +185,8 @@ class PointService:
         if user_total == 0:
             return 0
         above = (
-            PointTransaction.objects.values("user")
+            PointTransaction.objects.filter(user__role="eaglet")
+            .values("user")
             .annotate(total=Sum("points"))
             .filter(total__gt=user_total)
             .count()
@@ -220,7 +221,7 @@ class PointService:
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
-        qs = PointTransaction.objects.all()
+        qs = PointTransaction.objects.filter(user__role="eaglet")
 
         if scope == "nest" and nest_id:
             qs = qs.filter(nest_id=nest_id)

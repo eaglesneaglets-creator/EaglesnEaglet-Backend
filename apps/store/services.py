@@ -19,6 +19,13 @@ logger = logging.getLogger(__name__)
 
 class StoreService:
 
+    @staticmethod
+    def _is_admin(user) -> bool:
+        """Check admin status consistently with IsAdmin permission class."""
+        if user.is_staff or user.is_superuser:
+            return True
+        return getattr(user, "role", None) == "admin"
+
     # ------------------------------------------------------------------
     # Categories
     # ------------------------------------------------------------------
@@ -30,7 +37,7 @@ class StoreService:
     @staticmethod
     @transaction.atomic
     def create_category(user, data: dict) -> Category:
-        if user.role != "admin":
+        if not StoreService._is_admin(user):
             raise PermissionDenied("Only admins can create categories.")
         name = data["name"]
         slug = slugify(name)
@@ -77,7 +84,7 @@ class StoreService:
     @staticmethod
     @transaction.atomic
     def create_product(user, data: dict) -> Product:
-        if user.role != "admin":
+        if not StoreService._is_admin(user):
             raise PermissionDenied("Only admins can create products.")
         name = data["name"]
         slug = slugify(name)
@@ -110,8 +117,42 @@ class StoreService:
 
     @staticmethod
     @transaction.atomic
+    def upload_product_images(user, product_id: str, files: list, set_primary: bool = True) -> list:
+        """Upload one or more images to Cloudinary and attach them to a product."""
+        if not StoreService._is_admin(user):
+            raise PermissionDenied("Only admins can upload product images.")
+        try:
+            product = Product.objects.get(pk=product_id)
+        except Product.DoesNotExist:
+            raise NotFound("Product not found.")
+
+        from core.storage import upload_to_cloudinary
+
+        created_images = []
+        existing_count = product.images.count()
+
+        for i, file in enumerate(files):
+            result = upload_to_cloudinary(file, file_type="store_images")
+            image_url = result.get("secure_url") or result.get("url")
+            is_primary = set_primary and existing_count == 0 and i == 0
+            img = ProductImage.objects.create(
+                product=product,
+                image_url=image_url,
+                is_primary=is_primary,
+                display_order=existing_count + i,
+            )
+            created_images.append(img)
+
+        logger.info(
+            "Uploaded %d image(s) for product %s by %s",
+            len(created_images), product.name, user.email,
+        )
+        return created_images
+
+    @staticmethod
+    @transaction.atomic
     def update_product(user, product_id: str, data: dict) -> Product:
-        if user.role != "admin":
+        if not StoreService._is_admin(user):
             raise PermissionDenied("Only admins can update products.")
         try:
             product = Product.objects.get(pk=product_id)
@@ -140,7 +181,7 @@ class StoreService:
     @staticmethod
     @transaction.atomic
     def delete_product(user, product_id: str) -> None:
-        if user.role != "admin":
+        if not StoreService._is_admin(user):
             raise PermissionDenied("Only admins can delete products.")
         try:
             product = Product.objects.get(pk=product_id)
@@ -297,6 +338,62 @@ class StoreService:
         return order
 
     @staticmethod
+    @transaction.atomic
+    def create_guest_order(guest_email: str, guest_name: str, items_data: list, shipping_address: dict = None) -> Order:
+        """
+        Create an order for a guest (no user account required).
+        items_data: list of {product_id, quantity}
+        """
+        if not items_data:
+            raise ValidationError({"cart": "Your cart is empty."})
+
+        product_ids = [item["product_id"] for item in items_data]
+        products_map = {
+            str(p.id): p
+            for p in Product.objects.select_for_update().filter(
+                pk__in=product_ids, status=Product.Status.PUBLISHED
+            )
+        }
+
+        # Validate all products exist and have stock
+        for item in items_data:
+            product = products_map.get(str(item["product_id"]))
+            if not product:
+                raise ValidationError({"cart": f"Product not found or unavailable."})
+            if product.stock_quantity < item["quantity"]:
+                raise ValidationError(
+                    {"cart": f"'{product.name}' only has {product.stock_quantity} in stock."}
+                )
+
+        total = sum(
+            products_map[str(item["product_id"])].price * item["quantity"]
+            for item in items_data
+        )
+
+        order = Order.objects.create(
+            user=None,
+            guest_email=guest_email,
+            guest_name=guest_name,
+            status=Order.Status.PENDING,
+            total_amount=total,
+            shipping_address=shipping_address or {},
+        )
+
+        for item in items_data:
+            product = products_map[str(item["product_id"])]
+            OrderItem.objects.create(
+                order=order,
+                product=product,
+                quantity=item["quantity"],
+                unit_price=product.price,
+            )
+            product.stock_quantity -= item["quantity"]
+            product.save(update_fields=["stock_quantity"])
+
+        logger.info("Guest order created: %s for %s — total %s", order.id, guest_email, total)
+        return order
+
+    @staticmethod
     def get_user_orders(user):
         return Order.objects.filter(user=user).prefetch_related(
             "items", "items__product"
@@ -310,6 +407,33 @@ class StoreService:
             ).get(pk=order_id, user=user)
         except Order.DoesNotExist:
             raise NotFound("Order not found.")
+
+    @staticmethod
+    @transaction.atomic
+    def mark_order_paid(reference: str, transaction_id: str) -> Order:
+        """
+        Idempotent: if order is already PAID, return immediately without any write.
+
+        Uses select_for_update() to prevent a race condition where two concurrent
+        Celery workers (triggered by Paystack webhook retries) both see status=PENDING
+        and both write PAID — without the lock both writes succeed causing duplicate
+        processing.  With the lock, the second worker waits, then sees PAID and exits.
+        """
+        try:
+            order = Order.objects.select_for_update().get(paystack_reference=reference)
+        except Order.DoesNotExist:
+            raise NotFound(f"Order with reference '{reference}' not found.")
+
+        if order.status == Order.Status.PAID:
+            # Idempotency guard — safe to call multiple times (Paystack retries webhooks)
+            logger.info("Idempotency guard: order %s already PAID, skipping.", order.id)
+            return order  # EARLY RETURN — no DB write
+
+        order.status = Order.Status.PAID
+        order.paystack_transaction_id = str(transaction_id)
+        order.save(update_fields=["status", "paystack_transaction_id"])
+        logger.info("Order %s marked PAID. Paystack transaction: %s", order.id, transaction_id)
+        return order
 
     @staticmethod
     @transaction.atomic

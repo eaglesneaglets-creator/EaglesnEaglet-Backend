@@ -40,10 +40,11 @@ class IsAdmin(BasePermission):
     message = "Only Admins can perform this action."
 
     def has_permission(self, request, view):
-        return (
-            request.user.is_authenticated
-            and (request.user.is_staff or request.user.is_superuser)
-        )
+        if not request.user.is_authenticated:
+            return False
+        if request.user.is_staff or request.user.is_superuser:
+            return True
+        return hasattr(request.user, "role") and request.user.role == "admin"
 
 
 class IsEagleOrAdmin(BasePermission):

@@ -104,3 +104,121 @@ class TestCancelOrder:
         api.post(f"/api/v1/store/orders/{order_id}/cancel/", {}, format="json")
         product.refresh_from_db()
         assert product.stock_quantity == 10  # fully restored
+
+
+# ── Payment endpoint tests (MM-20) ────────────────────────────────────────────
+
+import uuid as _uuid
+from decimal import Decimal as _Decimal
+from unittest.mock import patch as _patch
+from django.test import override_settings as _override_settings
+from apps.store.models import Order as _Order
+
+
+@pytest.fixture
+def pending_order_for_user(db, user):
+    """A PENDING order owned by the test user, ready for payment initialization."""
+    return _Order.objects.create(
+        user=user,
+        status=_Order.Status.PENDING,
+        total_amount=_Decimal("150.00"),
+        shipping_address={},
+    )
+
+
+@pytest.fixture
+def payment_pending_order(db, user):
+    """An order in PAYMENT_PENDING with paystack_reference set."""
+    ref = str(_uuid.uuid4())
+    return _Order.objects.create(
+        user=user,
+        status=_Order.Status.PAYMENT_PENDING,
+        total_amount=_Decimal("150.00"),
+        paystack_reference=ref,
+        shipping_address={},
+    )
+
+
+class TestInitializePayment:
+    @_patch("apps.store.views.PaystackService.initialize_payment")
+    def test_auth_user_can_initialize_payment(self, mock_init, api, user, pending_order_for_user):
+        mock_init.return_value = {
+            "authorization_url": "https://checkout.paystack.com/abc",
+            "reference": str(pending_order_for_user.id),
+        }
+        api.force_authenticate(user=user)
+        r = api.post(
+            f"/api/v1/store/orders/{pending_order_for_user.id}/initialize-payment/",
+            {},
+            format="json",
+        )
+        assert r.status_code == 200
+        assert r.data["success"] is True
+        assert "authorization_url" in r.data["data"]
+        assert r.data["data"]["reference"] == str(pending_order_for_user.id)
+
+        pending_order_for_user.refresh_from_db()
+        assert pending_order_for_user.status == _Order.Status.PAYMENT_PENDING
+        assert pending_order_for_user.paystack_reference == str(pending_order_for_user.id)
+
+    def test_unauthenticated_cannot_initialize(self, api, pending_order_for_user):
+        r = api.post(
+            f"/api/v1/store/orders/{pending_order_for_user.id}/initialize-payment/",
+            {},
+            format="json",
+        )
+        assert r.status_code == 401
+
+    @_patch("apps.store.views.PaystackService.initialize_payment")
+    def test_paid_order_cannot_reinitialize(self, mock_init, api, user, db):
+        """An already-PAID order must return 400 — cannot re-initialize payment."""
+        paid_order = _Order.objects.create(
+            user=user,
+            status=_Order.Status.PAID,
+            total_amount=_Decimal("50.00"),
+            paystack_reference=str(_uuid.uuid4()),
+        )
+        api.force_authenticate(user=user)
+        r = api.post(
+            f"/api/v1/store/orders/{paid_order.id}/initialize-payment/",
+            {},
+            format="json",
+        )
+        assert r.status_code == 400
+        mock_init.assert_not_called()
+
+
+class TestVerifyPayment:
+    @_patch("apps.store.views.PaystackService.verify_payment")
+    def test_verify_marks_order_paid_on_success(self, mock_verify, api, user, payment_pending_order):
+        mock_verify.return_value = {"status": "success", "id": 12345}
+        api.force_authenticate(user=user)
+        r = api.post(
+            f"/api/v1/store/orders/{payment_pending_order.id}/verify/",
+            {},
+            format="json",
+        )
+        assert r.status_code == 200
+        assert r.data["data"]["status"] == "paid"
+
+    @_patch("apps.store.views.PaystackService.verify_payment")
+    def test_verify_failed_payment_leaves_status_unchanged(self, mock_verify, api, user, payment_pending_order):
+        mock_verify.return_value = {"status": "failed", "id": 0}
+        api.force_authenticate(user=user)
+        r = api.post(
+            f"/api/v1/store/orders/{payment_pending_order.id}/verify/",
+            {},
+            format="json",
+        )
+        assert r.status_code == 200
+        payment_pending_order.refresh_from_db()
+        assert payment_pending_order.status == _Order.Status.PAYMENT_PENDING
+
+    def test_verify_order_without_reference_returns_400(self, api, user, pending_order_for_user):
+        """Order with no paystack_reference set must return 400."""
+        r = api.post(
+            f"/api/v1/store/orders/{pending_order_for_user.id}/verify/",
+            {},
+            format="json",
+        )
+        assert r.status_code == 400

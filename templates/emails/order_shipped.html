@@ -1,0 +1,35 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Your Order Is On Its Way — Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2 style="color: #0369a1;">Your order is on its way! 🚚</h2>
+
+{% if user %}
+<p>Hi {{ user.first_name }},</p>
+{% else %}
+<p>Hello,</p>
+{% endif %}
+
+<p>Great news! Your Eagles & Eaglets order has been shipped and is headed your way.</p>
+
+<div class="info-box" style="background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 8px; padding: 16px; margin: 24px 0;">
+    <p style="font-weight: 700; margin-bottom: 4px; color: #1e40af;">Order Reference</p>
+    <p style="font-family: monospace; font-size: 15px; color: #1d4ed8; margin: 0;">#{{ order_short }}</p>
+</div>
+
+{% if shipping_address %}
+<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 24px 0;">
+    <p style="font-weight: 700; margin-bottom: 8px; color: #374151;">Shipping To</p>
+    {% if shipping_address.street %}<p style="margin: 2px 0; color: #4b5563;">{{ shipping_address.street }}</p>{% endif %}
+    {% if shipping_address.city %}<p style="margin: 2px 0; color: #4b5563;">{{ shipping_address.city }}{% if shipping_address.region %}, {{ shipping_address.region }}{% endif %}</p>{% endif %}
+    {% if shipping_address.country %}<p style="margin: 2px 0; color: #4b5563;">{{ shipping_address.country }}{% if shipping_address.postal_code %} {{ shipping_address.postal_code }}{% endif %}</p>{% endif %}
+</div>
+{% endif %}
+
+<p style="text-align: center; margin: 32px 0;">
+    <a href="{{ frontend_url }}/store/orders/{{ order_id }}" class="button" style="background: #2563eb; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 700; display: inline-block;">Track Your Order</a>
+</p>
+
+<p style="color: #6B7280; font-size: 14px;">You'll receive another notification once your order has been delivered. If you have any questions, please contact our support team.</p>
+{% endblock %}

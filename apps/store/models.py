@@ -129,8 +129,11 @@ class Order(TimestampMixin, models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
-        "users.User", on_delete=models.CASCADE, related_name="orders"
+        "users.User", on_delete=models.CASCADE, related_name="orders",
+        null=True, blank=True,
     )
+    guest_email = models.EmailField(null=True, blank=True)
+    guest_name = models.CharField(max_length=200, null=True, blank=True)
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.PENDING
     )
@@ -144,7 +147,8 @@ class Order(TimestampMixin, models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"Order {self.id} \u2014 {self.user.email} ({self.status})"
+        customer = self.user.email if self.user_id else (self.guest_email or "guest")
+        return f"Order {self.id} — {customer} ({self.status})"
 
 
 class OrderItem(TimestampMixin, models.Model):
@@ -165,3 +169,21 @@ class OrderItem(TimestampMixin, models.Model):
 
     def __str__(self):
         return f"{self.quantity}\u00d7 {self.product.name} @ {self.unit_price}"
+
+
+class OrderStatusHistory(TimestampMixin, models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="status_history")
+    from_status = models.CharField(max_length=20, choices=Order.Status.choices, null=True, blank=True)
+    to_status = models.CharField(max_length=20, choices=Order.Status.choices)
+    changed_by = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="order_status_changes"
+    )
+    note = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"Order {self.order_id}: {self.from_status} → {self.to_status}"

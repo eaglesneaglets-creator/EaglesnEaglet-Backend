@@ -6,7 +6,7 @@ Input validation and output formatting for the store API.
 
 from decimal import Decimal
 from rest_framework import serializers
-from .models import Category, Product, ProductImage, Cart, CartItem, Order, OrderItem
+from .models import Category, Product, ProductImage, Cart, CartItem, Order, OrderItem, OrderStatusHistory
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -55,13 +55,14 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 
 
 class ProductCreateSerializer(serializers.Serializer):
-    """Used for admin product create/update."""
+    """Used for admin product create/update. Images are uploaded as files via multipart."""
     name = serializers.CharField(max_length=200)
     description = serializers.CharField(required=False, default="", allow_blank=True)
     category_id = serializers.UUIDField(required=False, allow_null=True)
     price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0.01"))
     stock_quantity = serializers.IntegerField(min_value=0, default=0)
     status = serializers.ChoiceField(choices=Product.Status.choices, default=Product.Status.DRAFT)
+    # Legacy: still accept image_url for backward compatibility, but prefer file uploads
     image_url = serializers.URLField(required=False, allow_blank=True)
 
 
@@ -164,3 +165,125 @@ class OrderDetailSerializer(serializers.ModelSerializer):
 
 class CreateOrderSerializer(serializers.Serializer):
     shipping_address = serializers.DictField(required=False, default=dict)
+
+
+class GuestCartItemSerializer(serializers.Serializer):
+    product_id = serializers.UUIDField()
+    quantity = serializers.IntegerField(min_value=1)
+
+
+class GuestCheckoutSerializer(serializers.Serializer):
+    guest_email = serializers.EmailField()
+    guest_name = serializers.CharField(max_length=200)
+    items = GuestCartItemSerializer(many=True)
+    shipping_address = serializers.DictField(required=False, default=dict)
+
+
+# ─── Admin Order Serializers ──────────────────────────────────────────────────
+
+class OrderStatusHistorySerializer(serializers.ModelSerializer):
+    changed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrderStatusHistory
+        fields = ["id", "from_status", "to_status", "changed_by_name", "note", "created_at"]
+
+    def get_changed_by_name(self, obj):
+        if obj.changed_by:
+            name = f"{obj.changed_by.first_name} {obj.changed_by.last_name}".strip()
+            return name or obj.changed_by.email
+        return "System"
+
+
+class AdminOrderListSerializer(serializers.ModelSerializer):
+    order_number = serializers.SerializerMethodField()
+    customer_name = serializers.SerializerMethodField()
+    customer_email = serializers.SerializerMethodField()
+    item_count = serializers.SerializerMethodField()
+    is_guest = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Order
+        fields = [
+            "id", "order_number", "customer_name", "customer_email",
+            "is_guest", "status", "total_amount", "item_count", "created_at",
+        ]
+
+    def get_order_number(self, obj):
+        return str(obj.id)[:8].upper()
+
+    def get_customer_name(self, obj):
+        if obj.user_id:
+            return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.email
+        return obj.guest_name or "Guest"
+
+    def get_customer_email(self, obj):
+        return obj.user.email if obj.user_id else (obj.guest_email or "")
+
+    def get_item_count(self, obj):
+        return sum(i.quantity for i in obj.items.all())
+
+    def get_is_guest(self, obj):
+        return obj.user_id is None
+
+
+class AdminOrderDetailSerializer(serializers.ModelSerializer):
+    order_number = serializers.SerializerMethodField()
+    customer_name = serializers.SerializerMethodField()
+    customer_email = serializers.SerializerMethodField()
+    is_guest = serializers.SerializerMethodField()
+    items = OrderItemSerializer(many=True, read_only=True)
+    status_history = OrderStatusHistorySerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            "id", "order_number", "customer_name", "customer_email", "is_guest",
+            "status", "total_amount", "items", "shipping_address",
+            "paystack_reference", "paystack_transaction_id", "receipt_url",
+            "status_history", "created_at",
+        ]
+
+    def get_order_number(self, obj):
+        return str(obj.id)[:8].upper()
+
+    def get_customer_name(self, obj):
+        if obj.user_id:
+            return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.email
+        return obj.guest_name or "Guest"
+
+    def get_customer_email(self, obj):
+        return obj.user.email if obj.user_id else (obj.guest_email or "")
+
+    def get_is_guest(self, obj):
+        return obj.user_id is None
+
+
+# Allowed status transitions — enforced in AdminOrderStatusUpdateSerializer
+ORDER_TRANSITIONS: dict = {
+    "pending":          ["payment_pending", "cancelled"],
+    "payment_pending":  ["paid", "cancelled"],
+    "paid":             ["processing", "refunded"],
+    "processing":       ["shipped", "cancelled"],
+    "shipped":          ["delivered"],
+    "delivered":        ["refunded"],
+    "cancelled":        [],
+    "refunded":         [],
+}
+
+
+class AdminOrderStatusUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=Order.Status.choices)
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, data):
+        order = self.context["order"]
+        allowed = ORDER_TRANSITIONS.get(order.status, [])
+        if data["status"] not in allowed:
+            raise serializers.ValidationError({
+                "status": (
+                    f"Cannot transition from '{order.status}' to '{data['status']}'. "
+                    f"Allowed next statuses: {allowed or ['none']}"
+                )
+            })
+        return data

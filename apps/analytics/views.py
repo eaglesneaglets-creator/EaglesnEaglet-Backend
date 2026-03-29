@@ -95,36 +95,45 @@ class AnalyticsViewSet(ViewSet):
 
     def check_in(self, request):
         """Record a daily check-in and award points."""
+        from django.db import transaction
+        from django.contrib.auth import get_user_model
         from apps.points.services import PointService
         from apps.points.models import PointTransaction
-        
+
         today = timezone.now().date()
-        
-        # Check if already checked in today
-        already_checked_in = PointTransaction.objects.filter(
-            user=request.user,
-            activity_type="check_in",
-            created_at__date=today
-        ).exists()
-        
-        if already_checked_in:
-            return Response({
-                "success": False, 
-                "error": {"message": "You have already checked in today."}
-            }, status=400)
-            
-        # Award points
-        txn = PointService.award_points(request.user, "check_in")
-        
+        User = get_user_model()
+
+        with transaction.atomic():
+            # Lock the user row to serialize concurrent check-in requests.
+            # Any parallel request for the same user will block here until
+            # this transaction commits, preventing the duplicate-award race.
+            User.objects.select_for_update().get(id=request.user.id)
+
+            # Check if already checked in today (now safe under the lock)
+            already_checked_in = PointTransaction.objects.filter(
+                user=request.user,
+                activity_type="check_in",
+                created_at__date=today,
+            ).exists()
+
+            if already_checked_in:
+                return Response({
+                    "success": False,
+                    "error": {"message": "You have already checked in today."}
+                }, status=400)
+
+            # Award points (also runs inside this atomic block)
+            txn = PointService.award_points(request.user, "check_in")
+
         if not txn:
             return Response({
                 "success": False,
                 "error": {"message": "Check-in point configuration not found or disabled."}
             }, status=500)
-            
+
         # Clear cached stats so dashboard reflects new points immediately
         AnalyticsService.clear_dashboard_cache(request.user.id, request.user.role)
-        
+
         return Response({
             "success": True,
             "data": {
