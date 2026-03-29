@@ -145,6 +145,25 @@ class UserSerializer(serializers.ModelSerializer):
         return None
 
 
+class AdminUserSerializer(UserSerializer):
+    """
+    Extended serializer for admin user management — includes activity metrics.
+    The view annotates the queryset so these fields are available on each user object.
+    """
+    total_points = serializers.IntegerField(read_only=True, default=0)
+    nests_count = serializers.IntegerField(read_only=True, default=0)
+    eaglets_count = serializers.IntegerField(read_only=True, default=0)
+    content_created = serializers.IntegerField(read_only=True, default=0)
+    content_completed = serializers.IntegerField(read_only=True, default=0)
+    assignments_completed = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta(UserSerializer.Meta):
+        fields = UserSerializer.Meta.fields + [
+            'total_points', 'nests_count', 'eaglets_count',
+            'content_created', 'content_completed', 'assignments_completed',
+        ]
+
+
 class UserRegistrationSerializer(serializers.ModelSerializer):
     """
     Serializer for user registration.

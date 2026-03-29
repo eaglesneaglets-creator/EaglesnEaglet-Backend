@@ -89,6 +89,7 @@ urlpatterns = [
     # =========================================================================
     # ADMIN USER MANAGEMENT
     # =========================================================================
+    path('admin/users/', views.AdminUserListView.as_view(), name='admin-user-list'),
     path('admin/users/<uuid:user_id>/suspend/', views.AdminSuspendUserView.as_view(), name='admin-suspend-user'),
     path('admin/users/<uuid:user_id>/reactivate/', views.AdminReactivateUserView.as_view(), name='admin-reactivate-user'),
 ]

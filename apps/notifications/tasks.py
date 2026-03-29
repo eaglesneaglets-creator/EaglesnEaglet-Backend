@@ -75,3 +75,32 @@ def send_order_confirmed_email(user_id: str, order_id: str):
         template_name="emails/order_confirmed.html",
         context={"order_id": order_id},
     )
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_guest_email_notification(self, recipient_email: str, subject: str, template_name: str, context: dict):
+    """
+    Same as send_email_notification but for guest users who have no User record.
+    Sends directly to recipient_email string.
+    """
+    import smtplib
+
+    context.setdefault("frontend_url", getattr(settings, "FRONTEND_URL", "http://localhost:5173"))
+
+    try:
+        html_message = render_to_string(template_name, context)
+        send_mail(
+            subject=subject,
+            message="",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient_email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+        logger.info("Guest email sent: %s → %s", subject, recipient_email)
+    except smtplib.SMTPException as exc:
+        logger.error("SMTP error sending to %s: %s — retrying", recipient_email, exc)
+        raise self.retry(exc=exc)
+    except Exception as exc:
+        logger.error("Unexpected error sending guest email to %s: %s", recipient_email, exc)
+        raise

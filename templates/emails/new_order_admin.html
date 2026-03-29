@@ -1,0 +1,41 @@
+{% extends "emails/base.html" %}
+
+{% block title %}New Order Received — Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2 style="color: #166534;">New Order Received 🛒</h2>
+
+<p>Hi {{ user.first_name }},</p>
+<p>A new order has been placed on the Eagles & Eaglets store and is awaiting your review.</p>
+
+<div class="info-box" style="background: #f0fdf4; border-left: 4px solid #22c55e; border-radius: 8px; padding: 16px; margin: 24px 0;">
+    <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+            <td style="padding: 6px 0; color: #6b7280; font-size: 14px; width: 140px;">Order Reference</td>
+            <td style="padding: 6px 0; font-weight: 700; font-family: monospace; color: #166534;">#{{ order_short }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 6px 0; color: #6b7280; font-size: 14px;">Customer</td>
+            <td style="padding: 6px 0; font-weight: 600; color: #111827;">{{ customer_name }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 6px 0; color: #6b7280; font-size: 14px;">Email</td>
+            <td style="padding: 6px 0; color: #374151;">{{ customer_email }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 6px 0; color: #6b7280; font-size: 14px;">Total Amount</td>
+            <td style="padding: 6px 0; font-weight: 700; color: #166534; font-size: 16px;">₵{{ total_amount }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 6px 0; color: #6b7280; font-size: 14px;">Items</td>
+            <td style="padding: 6px 0; color: #374151;">{{ item_count }} item{{ item_count|pluralize }}</td>
+        </tr>
+    </table>
+</div>
+
+<p style="text-align: center; margin: 32px 0;">
+    <a href="{{ frontend_url }}/admin/store/orders" class="button" style="background: #16a34a; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 700; display: inline-block;">View Order in Dashboard</a>
+</p>
+
+<p style="color: #6B7280; font-size: 14px;">Log in to the admin dashboard to review the full order details, update the order status, and arrange fulfilment.</p>
+{% endblock %}

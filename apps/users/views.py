@@ -2479,6 +2479,95 @@ class AdminDashboardStatsView(APIView):
         })
 
 
+class AdminUserListView(APIView):
+    """
+    List all platform users with filtering, search, and pagination.
+    GET /api/v1/auth/admin/users/
+    Query params:
+        - role: eagle | eaglet | admin | all (default: all)
+        - status: active | suspended | pending | inactive | all (default: all)
+        - search: search by name or email
+        - ordering: created_at | -created_at | full_name | -full_name (default: -created_at)
+        - page: page number (default: 1)
+        - per_page: items per page (default: 20, max: 100)
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        from django.db.models import Q, Count, Sum, Value
+        from django.db.models.functions import Coalesce
+        from .serializers import AdminUserSerializer
+
+        role_filter = request.GET.get('role', 'all')
+        status_filter = request.GET.get('status', 'all')
+        search = request.GET.get('search', '').strip()
+        ordering = request.GET.get('ordering', '-created_at')
+        page = max(1, int(request.GET.get('page', 1)))
+        per_page = min(max(1, int(request.GET.get('per_page', 20))), 100)
+
+        qs = User.objects.all()
+
+        # Annotate with activity metrics
+        qs = qs.annotate(
+            total_points=Coalesce(Sum('point_transactions__points'), Value(0)),
+            nests_count=Count('owned_nests', distinct=True),
+            eaglets_count=Count(
+                'owned_nests__memberships',
+                filter=Q(owned_nests__memberships__status='active'),
+                distinct=True,
+            ),
+            content_created=Count('created_modules', distinct=True),
+            content_completed=Count(
+                'content_progress',
+                filter=Q(content_progress__status='completed'),
+                distinct=True,
+            ),
+            assignments_completed=Count(
+                'assignment_submissions',
+                filter=Q(assignment_submissions__status__in=['submitted', 'graded']),
+                distinct=True,
+            ),
+        )
+
+        if role_filter != 'all':
+            qs = qs.filter(role=role_filter)
+
+        if status_filter != 'all':
+            qs = qs.filter(status=status_filter)
+
+        if search:
+            qs = qs.filter(
+                Q(email__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search)
+            )
+
+        # Validate and apply ordering
+        allowed_ordering = {'created_at', '-created_at', 'first_name', '-first_name', 'email', '-email', 'last_login', '-last_login'}
+        if ordering not in allowed_ordering:
+            ordering = '-created_at'
+        qs = qs.order_by(ordering)
+
+        total = qs.count()
+        start = (page - 1) * per_page
+        users = qs[start:start + per_page]
+
+        serializer = AdminUserSerializer(users, many=True)
+
+        return Response({
+            'success': True,
+            'data': {
+                'users': serializer.data,
+                'pagination': {
+                    'total': total,
+                    'page': page,
+                    'per_page': per_page,
+                    'total_pages': max(1, (total + per_page - 1) // per_page),
+                }
+            }
+        })
+
+
 class AdminSuspendUserView(APIView):
     """
     Suspend an approved user (revoke platform access).

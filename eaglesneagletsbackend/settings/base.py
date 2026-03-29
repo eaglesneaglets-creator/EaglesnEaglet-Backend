@@ -281,6 +281,22 @@ LOGGING = {
 
 
 # =============================================================================
+# Paystack Payment Gateway (MM-20)
+# =============================================================================
+# Keys are read from environment variables. Never hardcode these values.
+# For local dev: add to Backend/eaglesneagletsbackend/.env
+# For production: add to Railway environment variables
+#
+# PAYSTACK_SECRET_KEY=sk_test_...
+# PAYSTACK_PUBLIC_KEY=pk_test_...
+# FRONTEND_URL=http://localhost:5173
+import os as _os
+PAYSTACK_SECRET_KEY = _os.environ.get("PAYSTACK_SECRET_KEY", "")
+PAYSTACK_PUBLIC_KEY = _os.environ.get("PAYSTACK_PUBLIC_KEY", "")
+FRONTEND_URL = _os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+
+# =============================================================================
 # Security Configuration
 # =============================================================================
 # Centralized security thresholds — configurable via environment variables
