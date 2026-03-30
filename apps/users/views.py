@@ -73,18 +73,21 @@ from .validators import validate_cv_file, validate_image_file
 def _set_auth_cookies(response, access_token: str, refresh_token: str = None) -> None:
     """
     Attach JWT tokens as httpOnly cookies to a DRF Response.
-    Secure=True in production (https), False in dev (http).
-    SameSite=Lax prevents CSRF on cross-site requests while allowing
-    normal navigation (e.g. OAuth redirects).
+
+    SameSite=None is required for cross-origin requests (frontend on Vercel,
+    backend on Railway). SameSite=None requires Secure=True (HTTPS only).
+    In local dev (DEBUG=True) we use SameSite=Lax + Secure=False since
+    localhost is same-site and doesn't support HTTPS easily.
     """
     is_secure = not settings.DEBUG
+    samesite = 'None' if is_secure else 'Lax'
 
     response.set_cookie(
         key='access_token',
         value=str(access_token),
         httponly=True,
         secure=is_secure,
-        samesite='Lax',
+        samesite=samesite,
         max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
         path='/',
     )
@@ -94,7 +97,7 @@ def _set_auth_cookies(response, access_token: str, refresh_token: str = None) ->
             value=str(refresh_token),
             httponly=True,
             secure=is_secure,
-            samesite='Lax',
+            samesite=samesite,
             max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
             path='/',
         )
@@ -102,8 +105,10 @@ def _set_auth_cookies(response, access_token: str, refresh_token: str = None) ->
 
 def _clear_auth_cookies(response) -> None:
     """Delete both JWT cookies on logout."""
-    response.delete_cookie('access_token', path='/')
-    response.delete_cookie('refresh_token', path='/')
+    is_secure = not settings.DEBUG
+    samesite = 'None' if is_secure else 'Lax'
+    response.delete_cookie('access_token', path='/', samesite=samesite)
+    response.delete_cookie('refresh_token', path='/', samesite=samesite)
 
 
 class RegisterView(APIView):
