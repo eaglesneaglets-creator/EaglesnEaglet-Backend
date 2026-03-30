@@ -181,7 +181,12 @@ class LoginView(TokenObtainPairView):
 
                 api_response = Response({
                     'success': True,
-                    'data': {'user': user_data},
+                    'data': {
+                        'user': user_data,
+                        # Access token returned in body for WebSocket auth (?token= query param).
+                        # The httpOnly cookie is the primary auth mechanism for HTTP requests.
+                        'access': access,
+                    },
                 })
                 _set_auth_cookies(api_response, access, refresh)
                 return api_response
