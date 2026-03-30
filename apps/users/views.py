@@ -274,27 +274,36 @@ class CustomTokenRefreshView(TokenRefreshView):
     """
 
     def post(self, request, *args, **kwargs):
-        # Inject cookie refresh token into request data if body doesn't have one.
-        # This lets the parent TokenRefreshView validate and rotate it normally.
-        cookie_refresh = request.COOKIES.get('refresh_token')
-        if cookie_refresh and not request.data.get('refresh'):
-            data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
-            data['refresh'] = cookie_refresh
-            request._full_data = data
+        # Read refresh token from cookie first, fall back to request body.
+        # We call TokenRefreshSerializer directly so we control the input data,
+        # avoiding the DRF request._full_data / _data caching issue.
+        refresh_token = request.COOKIES.get('refresh_token') or request.data.get('refresh')
+
+        if not refresh_token:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 401,
+                    'type': 'TokenRefreshError',
+                    'message': 'No refresh token provided. Please log in again.'
+                }
+            }, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
-            response = super().post(request, *args, **kwargs)
+            from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+            serializer = TokenRefreshSerializer(data={'refresh': refresh_token})
+            serializer.is_valid(raise_exception=True)
 
-            if response.status_code == 200:
-                access = response.data.get('access')
-                refresh = response.data.get('refresh')  # rotated token
+            access = serializer.validated_data.get('access')
+            rotated_refresh = serializer.validated_data.get('refresh')  # present when ROTATE_REFRESH_TOKENS=True
 
-                api_response = Response({'success': True})
-                _set_auth_cookies(api_response, access, refresh)
-                return api_response
+            # Return access token in body so the frontend can store it in memory
+            # (needed for WebSocket ?token= auth — httpOnly cookies are not readable by JS).
+            api_response = Response({'success': True, 'access': str(access)})
+            _set_auth_cookies(api_response, access, rotated_refresh)
+            return api_response
 
-            return response
-        except (TokenError, InvalidToken) as e:
+        except (TokenError, InvalidToken):
             return Response({
                 'success': False,
                 'error': {
@@ -313,7 +322,7 @@ class CustomTokenRefreshView(TokenRefreshView):
                 }
             }, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as e:
-            logger.error(f"Token refresh error: {str(e)}")
+            logger.error(f"Token refresh error: {e}")
             return Response({
                 'success': False,
                 'error': {
