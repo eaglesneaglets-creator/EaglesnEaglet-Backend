@@ -188,9 +188,8 @@ class LoginView(TokenObtainPairView):
                     'success': True,
                     'data': {
                         'user': user_data,
-                        # Access token returned in body for WebSocket auth (?token= query param).
-                        # The httpOnly cookie is the primary auth mechanism for HTTP requests.
                         'access': access,
+                        'refresh': refresh,
                     },
                 })
                 _set_auth_cookies(api_response, access, refresh)
@@ -302,9 +301,13 @@ class CustomTokenRefreshView(TokenRefreshView):
             access = serializer.validated_data.get('access')
             rotated_refresh = serializer.validated_data.get('refresh')  # present when ROTATE_REFRESH_TOKENS=True
 
-            # Return access token in body so the frontend can store it in memory
-            # (needed for WebSocket ?token= auth — httpOnly cookies are not readable by JS).
-            api_response = Response({'success': True, 'access': str(access)})
+            # Return both access and refresh tokens in body as fallback
+            # for when cross-origin httpOnly cookies are blocked.
+            api_response = Response({
+                'success': True, 
+                'access': str(access),
+                'refresh': str(rotated_refresh) if rotated_refresh else refresh_token
+            })
             _set_auth_cookies(api_response, access, rotated_refresh)
             return api_response
 
