@@ -201,7 +201,7 @@ class NestViewSet(ViewSet):
                 "id": str(m.user.id),
                 "first_name": m.user.first_name,
                 "last_name": m.user.last_name,
-                "full_name": m.user.get_full_name(),
+                "full_name": m.user.full_name,
                 "email": m.user.email,
                 "avatar_url": (
                     m.user.avatar.url
