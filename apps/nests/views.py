@@ -132,6 +132,13 @@ class NestViewSet(ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # SECURITY: Only the nest owner (eagle) may update it. Admins bypass this check.
+        if request.user.role != 'admin' and nest.eagle_id != request.user.id:
+            return Response(
+                {"success": False, "error": {"message": "Only the Nest owner can update it."}},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         serializer = NestCreateSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 

@@ -72,6 +72,14 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     # ── Handlers ───────────────────────────────────────────────────────────
 
     async def _handle_send_message(self, raw_content: str):
+        # SECURITY: Enforce message length limit to prevent DoS via DB bloat.
+        if not raw_content or not raw_content.strip():
+            await self.send_json({"type": "error", "message": "Message cannot be empty."})
+            return
+        if len(raw_content) > 4000:
+            await self.send_json({"type": "error", "message": "Message exceeds maximum length of 4000 characters."})
+            return
+
         from apps.chat.models import Conversation
         try:
             conversation = await database_sync_to_async(
@@ -79,6 +87,13 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             )(id=self.conversation_id)
         except Conversation.DoesNotExist:
             await self.send_json({"type": "error", "message": "Conversation not found."})
+            return
+
+        # SECURITY: Re-validate participant membership on every message send.
+        # A user may have been removed from the conversation after connecting.
+        still_participant = await self._is_participant(self.user, self.conversation_id)
+        if not still_participant:
+            await self.close(code=4003)
             return
 
         from apps.chat.services import ChatService
