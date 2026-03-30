@@ -110,7 +110,7 @@ RUN mkdir -p /app/staticfiles /app/media /app/logs && \
 USER appuser
 
 # Collect static files (CSS, JS, images)
-RUN SECRET_KEY=build-only-dummy-key python manage.py collectstatic --noinput --settings=eaglesneagletsbackend.settings.production || true
+RUN SECRET_KEY=build-only-dummy-key CLOUDINARY_API_KEY= python manage.py collectstatic --noinput --settings=eaglesneagletsbackend.settings.production
 
 # Expose port 8000
 EXPOSE 8000

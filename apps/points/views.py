@@ -85,6 +85,14 @@ class PointsViewSet(ViewSet):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+            # SECURITY: Eagles can only award points within their own nest.
+            # Admins may award across any nest.
+            if request.user.role != 'admin' and nest.eagle_id != request.user.id:
+                return Response(
+                    {"success": False, "error": {"message": "You can only award points in your own Nest."}},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         txn = PointService.award_manual_points(
             eagle=request.user,
             eaglet=eaglet,

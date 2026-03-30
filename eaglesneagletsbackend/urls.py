@@ -12,42 +12,39 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 def health_check(request):
     """
-    Health check endpoint for Docker and load balancers.
-    Returns 200 OK if the service is healthy.
+    Deep health check: verifies DB and Redis connectivity.
+    Returns 200 only when ALL dependencies are reachable.
+    Returns 503 when any dependency is down — Railway will restart the service.
+    Used by Docker HEALTHCHECK and Railway's healthcheck probe.
     """
+    import logging
     from django.db import connection
+    from django.core.cache import cache
 
-    health_status = {
-        'status': 'healthy',
-        'database': 'ok',
-        'cache': 'ok',
-    }
+    logger = logging.getLogger(__name__)
+    db_ok = False
+    redis_ok = False
 
-    # Check database connection
     try:
         with connection.cursor() as cursor:
             cursor.execute('SELECT 1')
+        db_ok = True
     except Exception as e:
-        health_status['status'] = 'unhealthy'
-        health_status['database'] = str(e)
+        logger.error("Health check: DB unreachable: %s", e)
 
-    # Check Redis connection
     try:
-        from django.core.cache import cache
-        cache.set('health_check', 'ok', 10)
-        cache.get('health_check')
+        cache.set('health_ping', '1', timeout=5)
+        redis_ok = cache.get('health_ping') == '1'
     except Exception as e:
-        health_status['cache'] = str(e)
-        # Cache failure is not critical
-        if health_status['status'] == 'healthy':
-            health_status['status'] = 'degraded'
+        logger.error("Health check: Redis unreachable: %s", e)
 
-    # Return 200 for both 'healthy' and 'degraded' (e.g. Redis down but DB up).
-    # Only return 503 if the database itself is unreachable, which makes the
-    # service truly non-functional. This prevents Railway's healthcheck from
-    # failing during startup when Redis hasn't finished initialising yet.
-    status_code = 200 if health_status['status'] != 'unhealthy' else 503
-    return JsonResponse(health_status, status=status_code)
+    status = 'ok' if (db_ok and redis_ok) else 'degraded'
+    http_status = 200 if (db_ok and redis_ok) else 503
+
+    return JsonResponse(
+        {'status': status, 'db': db_ok, 'redis': redis_ok},
+        status=http_status,
+    )
 
 
 # API URL patterns

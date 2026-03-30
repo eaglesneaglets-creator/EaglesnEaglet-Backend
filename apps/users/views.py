@@ -66,6 +66,46 @@ from .validators import validate_cv_file, validate_image_file
 # AUTHENTICATION VIEWS
 # =============================================================================
 
+# =============================================================================
+# COOKIE HELPERS — JWT httpOnly cookie management
+# =============================================================================
+
+def _set_auth_cookies(response, access_token: str, refresh_token: str = None) -> None:
+    """
+    Attach JWT tokens as httpOnly cookies to a DRF Response.
+    Secure=True in production (https), False in dev (http).
+    SameSite=Lax prevents CSRF on cross-site requests while allowing
+    normal navigation (e.g. OAuth redirects).
+    """
+    is_secure = not settings.DEBUG
+
+    response.set_cookie(
+        key='access_token',
+        value=str(access_token),
+        httponly=True,
+        secure=is_secure,
+        samesite='Lax',
+        max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
+        path='/',
+    )
+    if refresh_token is not None:
+        response.set_cookie(
+            key='refresh_token',
+            value=str(refresh_token),
+            httponly=True,
+            secure=is_secure,
+            samesite='Lax',
+            max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
+            path='/',
+        )
+
+
+def _clear_auth_cookies(response) -> None:
+    """Delete both JWT cookies on logout."""
+    response.delete_cookie('access_token', path='/')
+    response.delete_cookie('refresh_token', path='/')
+
+
 class RegisterView(APIView):
     """
     User registration endpoint.
@@ -133,10 +173,18 @@ class LoginView(TokenObtainPairView):
 
             # Wrap response in standard format
             if response.status_code == 200:
-                return Response({
+                # Extract tokens before removing them from the response body.
+                # Tokens are delivered via httpOnly cookies — never in the JSON body.
+                access = response.data.get('access')
+                refresh = response.data.get('refresh')
+                user_data = response.data.get('user', {})
+
+                api_response = Response({
                     'success': True,
-                    'data': response.data
+                    'data': {'user': user_data},
                 })
+                _set_auth_cookies(api_response, access, refresh)
+                return api_response
             return response
         except serializers.ValidationError as e:
             # Extract the error message from the ValidationError
@@ -181,15 +229,25 @@ class LogoutView(APIView):
 
     def post(self, request):
         try:
-            refresh_token = request.data.get('refresh')
-            if refresh_token:
-                token = RefreshToken(refresh_token)
-                token.blacklist()
+            # Read refresh token from httpOnly cookie first, fall back to request body
+            # for API clients that still send it in the body.
+            refresh_token_str = (
+                request.COOKIES.get('refresh_token')
+                or request.data.get('refresh')
+            )
+            if refresh_token_str:
+                try:
+                    token = RefreshToken(refresh_token_str)
+                    token.blacklist()
+                except Exception:
+                    pass  # Expired token still needs cookies cleared
 
-            return Response({
+            logout_response = Response({
                 'success': True,
                 'message': 'Successfully logged out.'
             }, status=status.HTTP_200_OK)
+            _clear_auth_cookies(logout_response)
+            return logout_response
         except Exception:
             return Response({
                 'success': False,
@@ -203,16 +261,33 @@ class LogoutView(APIView):
 
 class CustomTokenRefreshView(TokenRefreshView):
     """
-    Custom token refresh view with graceful error handling.
+    Custom token refresh view — reads refresh token from httpOnly cookie,
+    falls back to request body for API clients.
+    Sets new access_token (and rotated refresh_token) as httpOnly cookies.
 
     POST /api/v1/auth/token/refresh/
-
-    Handles cases where user no longer exists (e.g., after database flush)
     """
 
     def post(self, request, *args, **kwargs):
+        # Inject cookie refresh token into request data if body doesn't have one.
+        # This lets the parent TokenRefreshView validate and rotate it normally.
+        cookie_refresh = request.COOKIES.get('refresh_token')
+        if cookie_refresh and not request.data.get('refresh'):
+            data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+            data['refresh'] = cookie_refresh
+            request._full_data = data
+
         try:
             response = super().post(request, *args, **kwargs)
+
+            if response.status_code == 200:
+                access = response.data.get('access')
+                refresh = response.data.get('refresh')  # rotated token
+
+                api_response = Response({'success': True})
+                _set_auth_cookies(api_response, access, refresh)
+                return api_response
+
             return response
         except (TokenError, InvalidToken) as e:
             return Response({

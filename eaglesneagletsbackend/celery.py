@@ -27,6 +27,14 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 # Celery will look for a tasks.py file in each app
 app.autodiscover_tasks()
 
+# Global task time limits — prevents hung tasks from blocking workers indefinitely
+app.conf.update(
+    task_soft_time_limit=300,      # 5 min: raises SoftTimeLimitExceeded → task can clean up
+    task_time_limit=360,           # 6 min: hard kill if task doesn't respond to soft limit
+    worker_prefetch_multiplier=1,  # Don't prefetch — ensures fair distribution under load
+    task_acks_late=True,           # Acknowledge task only after completion (safer on crash)
+)
+
 # =============================================================================
 # CELERY BEAT SCHEDULE (Periodic Tasks)
 # =============================================================================
