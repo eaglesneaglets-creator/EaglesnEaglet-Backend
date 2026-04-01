@@ -188,9 +188,12 @@ class LoginView(TokenObtainPairView):
                     'success': True,
                     'data': {
                         'user': user_data,
-                        # access token returned in body for WebSocket ?token= param only.
-                        # The refresh token is set exclusively via httpOnly cookie below.
                         'access': access,
+                        # Also return refresh token in body for cross-origin
+                        # deployments where httpOnly cookies are blocked as
+                        # third-party. The httpOnly cookie is ALSO set as the
+                        # primary mechanism for same-origin setups.
+                        'refresh': refresh,
                     },
                 })
                 _set_auth_cookies(api_response, access, refresh)
@@ -308,11 +311,13 @@ class CustomTokenRefreshView(TokenRefreshView):
             access = serializer.validated_data.get('access')
             rotated_refresh = serializer.validated_data.get('refresh')  # present when ROTATE_REFRESH_TOKENS=True
 
-            # Return only the access token in the body.
-            # The refresh token is set exclusively via httpOnly cookie; never in body.
+            # Return both tokens in the body for cross-origin deployments
+            # where httpOnly cookies are blocked as third-party.
+            # The httpOnly cookie is ALSO set as the primary mechanism.
             api_response = Response({
                 'success': True,
                 'access': str(access),
+                'refresh': str(rotated_refresh) if rotated_refresh else None,
             })
             _set_auth_cookies(api_response, access, rotated_refresh)
             return api_response
@@ -1808,10 +1813,12 @@ class GoogleOAuthCallbackView(APIView):
                 response_data['user']['profile_completeness'] = 0
                 response_data['user']['onboarding_completed'] = False
 
-        return Response({
+        api_response = Response({
             'success': True,
             'data': response_data
         })
+        _set_auth_cookies(api_response, str(refresh.access_token), str(refresh))
+        return api_response
 
 
 # =============================================================================
