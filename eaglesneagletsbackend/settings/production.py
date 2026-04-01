@@ -165,7 +165,7 @@ CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', cast=Csv(), default='')
 # Content Security
 SECURE_CONTENT_TYPE_NOSNIFF = True
 # SECURE_BROWSER_XSS_FILTER removed — deprecated; CSP in SecurityHeadersMiddleware provides protection
-X_FRAME_OPTIONS = 'SAMEORIGIN'
+X_FRAME_OPTIONS = 'DENY'
 
 # Referrer Policy
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'

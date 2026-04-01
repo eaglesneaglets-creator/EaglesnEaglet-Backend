@@ -188,8 +188,9 @@ class LoginView(TokenObtainPairView):
                     'success': True,
                     'data': {
                         'user': user_data,
+                        # access token returned in body for WebSocket ?token= param only.
+                        # The refresh token is set exclusively via httpOnly cookie below.
                         'access': access,
-                        'refresh': refresh,
                     },
                 })
                 _set_auth_cookies(api_response, access, refresh)
@@ -301,12 +302,11 @@ class CustomTokenRefreshView(TokenRefreshView):
             access = serializer.validated_data.get('access')
             rotated_refresh = serializer.validated_data.get('refresh')  # present when ROTATE_REFRESH_TOKENS=True
 
-            # Return both access and refresh tokens in body as fallback
-            # for when cross-origin httpOnly cookies are blocked.
+            # Return only the access token in the body.
+            # The refresh token is set exclusively via httpOnly cookie; never in body.
             api_response = Response({
-                'success': True, 
+                'success': True,
                 'access': str(access),
-                'refresh': str(rotated_refresh) if rotated_refresh else refresh_token
             })
             _set_auth_cookies(api_response, access, rotated_refresh)
             return api_response
@@ -1607,11 +1607,24 @@ class GoogleOAuthCallbackView(APIView):
 
             except (json.JSONDecodeError, ValueError, Exception) as exc:
                 logger.warning("OAuth state decode failed: %s", exc)
-                # Fall through with default role — allow backward compat during rollout
-                role = request.data.get('role', 'eaglet')
+                return Response({
+                    'success': False,
+                    'error': {
+                        'code': 400,
+                        'type': 'InvalidState',
+                        'message': 'OAuth session expired or invalid. Please try again.'
+                    }
+                }, status=status.HTTP_400_BAD_REQUEST)
         else:
-            # Backward compatibility: if no state param, use role from request body
-            role = request.data.get('role', 'eaglet')
+            # No state parameter — reject; state is required for CSRF protection.
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 400,
+                    'type': 'MissingState',
+                    'message': 'OAuth state parameter is required. Please try again.'
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         # Validate role
         if role not in ['eagle', 'eaglet']:
