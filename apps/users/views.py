@@ -278,6 +278,12 @@ class CustomTokenRefreshView(TokenRefreshView):
     POST /api/v1/auth/token/refresh/
     """
 
+    # The refresh endpoint MUST allow unauthenticated requests.
+    # Its job is to issue a new access token when the caller only has a
+    # valid refresh_token (httpOnly cookie) — no access token is present.
+    permission_classes = [AllowAny]
+    authentication_classes = []  # Skip JWT auth — we read the refresh cookie ourselves
+
     def post(self, request, *args, **kwargs):
         # Read refresh token from cookie first, fall back to request body.
         # We call TokenRefreshSerializer directly so we control the input data,
