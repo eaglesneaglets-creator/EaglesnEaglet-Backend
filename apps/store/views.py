@@ -508,9 +508,12 @@ class VerifyPaymentView(APIView):
             if request.user and request.user.is_authenticated:
                 order = StoreService.get_order_detail(request.user, pk)
             else:
+                # Guest: only allow access to guest orders (user=None) to prevent IDOR.
+                # An unauthenticated caller must not be able to trigger verification
+                # or read details for orders belonging to registered users.
                 order = Order.objects.prefetch_related(
                     "items", "items__product", "items__product__images"
-                ).get(pk=pk)
+                ).get(pk=pk, user__isnull=True)
         except Order.DoesNotExist:
             raise DRFNotFound("Order not found.")
 

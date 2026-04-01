@@ -48,7 +48,7 @@ class SecurityHeadersMiddleware:
 
         # Additional security headers
         response['X-Content-Type-Options'] = 'nosniff'
-        response['X-Frame-Options'] = 'SAMEORIGIN'
+        response['X-Frame-Options'] = 'DENY'  # API never needs to be framed
         # X-XSS-Protection is deprecated; CSP above provides protection
         response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
 
