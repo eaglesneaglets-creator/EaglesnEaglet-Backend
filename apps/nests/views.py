@@ -33,6 +33,21 @@ from .serializers import (
 from .services import NestService, MembershipService, CommunityService
 
 
+def _annotate_nest_counts(queryset):
+    """Annotate a Nest queryset with member_count and is_full (reused by list & retrieve)."""
+    return queryset.annotate(
+        annotated_member_count=Count(
+            'memberships',
+            filter=Q(memberships__status='active') & ~Q(memberships__user=F('eagle'))
+        )
+    ).annotate(
+        annotated_is_full=ExpressionWrapper(
+            Q(annotated_member_count__gte=F('max_members')),
+            output_field=BooleanField()
+        )
+    )
+
+
 class NestViewSet(ViewSet):
     """
     Nest CRUD operations.
@@ -55,18 +70,8 @@ class NestViewSet(ViewSet):
         else:
             nests = NestService.get_public_nests()
 
-        # Fix N+1: Annotate member_count (excluding the eagle/owner) and calculate is_full
-        nests = nests.annotate(
-            annotated_member_count=Count(
-                'memberships',
-                filter=Q(memberships__status='active') & ~Q(memberships__user=F('eagle'))
-            )
-        ).annotate(
-            annotated_is_full=ExpressionWrapper(
-                Q(annotated_member_count__gte=F('max_members')),
-                output_field=BooleanField()
-            )
-        )
+        # Fix N+1: Annotate member_count and is_full
+        nests = _annotate_nest_counts(nests)
 
         paginator = StandardResultsSetPagination()
         page = paginator.paginate_queryset(nests, request)
@@ -95,23 +100,9 @@ class NestViewSet(ViewSet):
         """Retrieve nest details."""
         from .models import Nest
         try:
-            nest = (
-                Nest.objects
-                .select_related("eagle")
-                .annotate(
-                    annotated_member_count=Count(
-                        'memberships',
-                        filter=Q(memberships__status='active') & ~Q(memberships__user=F('eagle'))
-                    )
-                )
-                .annotate(
-                    annotated_is_full=ExpressionWrapper(
-                        Q(annotated_member_count__gte=F('max_members')),
-                        output_field=BooleanField()
-                    )
-                )
-                .get(pk=pk)
-            )
+            nest = _annotate_nest_counts(
+                Nest.objects.select_related("eagle")
+            ).get(pk=pk)
         except Nest.DoesNotExist:
             return Response(
                 {"success": False, "error": {"message": "Nest not found."}},

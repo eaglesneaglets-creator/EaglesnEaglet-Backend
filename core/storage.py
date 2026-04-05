@@ -90,12 +90,6 @@ def upload_to_cloudinary(file, file_type: str, **kwargs):
             'flags': 'progressive',     # Progressive loading for JPEGs
         })
 
-    # Apply video-specific optimizations
-    if resource_type == 'video':
-        upload_options.update({
-            'resource_type': 'video',
-        })
-
     upload_options.update(kwargs)
 
     try:

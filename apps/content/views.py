@@ -68,7 +68,6 @@ class ContentModuleViewSet(ViewSet):
 
         # If Eaglet, inject user-specific progress in one batch (Fixes N+1)
         if request.user.role == "eaglet":
-            from .services import ProgressService
             # Get progress for all modules in this page in one query
             module_ids = [m["id"] for m in data]
             progress_map = ProgressService.get_bulk_module_progress(request.user, module_ids)
@@ -372,6 +371,7 @@ class AssignmentViewSet(ViewSet):
             submission_pk,
             serializer.validated_data["grade"],
             serializer.validated_data.get("feedback", ""),
+            assignment_id=pk,  # validated inside the service against submission.assignment_id
         )
         return Response(
             {"success": True, "data": AssignmentSubmissionSerializer(submission).data}

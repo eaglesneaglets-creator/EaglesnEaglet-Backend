@@ -134,15 +134,19 @@ class RegisterView(APIView):
         try:
             from .tasks import send_verification_email
 
+            # Raw token stashed by the serializer's create() — must be passed to task so
+            # the email link contains the raw token, not its SHA-256 hash.
+            raw_token = getattr(user, '_raw_verification_token', None)
+
             # Try async first (Celery)
             try:
-                send_verification_email.delay(str(user.id))
+                send_verification_email.delay(str(user.id), raw_token)
                 email_sent = True
             except Exception as celery_error:
                 # Celery not available, try synchronous send
                 logger.warning(f"Celery not available, trying sync email: {celery_error}")
                 try:
-                    send_verification_email(str(user.id))
+                    send_verification_email(str(user.id), raw_token)
                     email_sent = True
                 except Exception as sync_error:
                     logger.error(f"Sync email send failed: {sync_error}")
@@ -429,13 +433,13 @@ class ResendVerificationView(APIView):
                     }
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            # Generate new token
-            user.generate_email_verification_token()
+            # Generate new token; capture raw value to pass to the Celery task.
+            raw_token = user.generate_email_verification_token()
 
             # Send verification email asynchronously
             try:
                 from .tasks import send_verification_email
-                send_verification_email.delay(str(user.id))
+                send_verification_email.delay(str(user.id), raw_token)
             except Exception:
                 pass
 
@@ -473,12 +477,12 @@ class PasswordResetRequestView(APIView):
 
         try:
             user = User.objects.get(email=email)
-            user.generate_password_reset_token()
+            raw_token = user.generate_password_reset_token()
 
             # Send password reset email asynchronously
             try:
                 from .tasks import send_password_reset_email
-                send_password_reset_email.delay(str(user.id))
+                send_password_reset_email.delay(str(user.id), raw_token)
             except Exception:
                 pass
         except User.DoesNotExist:

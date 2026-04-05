@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User, UserProfile, MentorKYC, EagletProfile, MenteeKYC
+from .models import User, UserProfile, MentorKYC, EagletProfile, MenteeKYC, LoginHistory
 from .constants import (
     EXPERTISE_CHOICES, MENTORSHIP_INTEREST_CHOICES,
     EDUCATIONAL_LEVEL_CHOICES, MENTORSHIP_GOAL_CHOICES, AGE_GROUP_CHOICES,
@@ -26,6 +26,18 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         email = attrs.get('email', '').lower()
         password = attrs.get('password')
+
+        # Extract client IP and user-agent early — needed for LoginHistory at all exit paths
+        request = self.context.get('request')
+        ip_address = None
+        if request:
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            if x_forwarded_for:
+                ip_address = x_forwarded_for.split(',')[0].strip()  # first hop = real client IP (H1)
+            else:
+                ip_address = request.META.get('REMOTE_ADDR')
+        ip_address = ip_address or '0.0.0.0'
+        user_agent = (request.META.get('HTTP_USER_AGENT', '') if request else '')[:255]
 
         # Check if user exists
         try:
@@ -67,13 +79,16 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         )
 
         if not auth_user:
-            # Increment failed login attempt
-            try:
-                failed_user = User.objects.get(email=email)
-                failed_user.increment_failed_login()
-            except User.DoesNotExist:
-                pass
-
+            # Increment failed login attempt — user already fetched above
+            user.increment_failed_login()
+            LoginHistory.objects.create(
+                user=user,
+                email=email,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                success=False,
+                failure_reason='invalid_credentials',
+            )
             raise serializers.ValidationError({
                 'detail': 'Invalid email or password.'
             })
@@ -84,17 +99,15 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 'detail': 'Please verify your email address before logging in.'
             })
 
-        # Reset failed login counter and update last login
-        request = self.context.get('request')
-        ip_address = None
-        if request:
-            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-            if x_forwarded_for:
-                ip_address = x_forwarded_for.split(',')[-1].strip()
-            else:
-                ip_address = request.META.get('REMOTE_ADDR')
-
+        # Reset failed login counter and record successful login
         user.update_last_login(ip_address)
+        LoginHistory.objects.create(
+            user=user,
+            email=email,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=True,
+        )
 
         # Generate tokens
         refresh = RefreshToken.for_user(user)
@@ -233,8 +246,9 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
                 **validated_data
             )
 
-            # Generate email verification token
-            user.generate_email_verification_token()
+            # Generate email verification token; stash raw token for the view to pass to the task.
+            # The DB stores only the SHA-256 hash — the raw token must travel via task argument.
+            user._raw_verification_token = user.generate_email_verification_token()
 
             # Create user profile
             UserProfile.objects.create(user=user)

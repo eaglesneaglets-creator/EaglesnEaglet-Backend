@@ -5,6 +5,7 @@ Custom user model with comprehensive security features and role-based access.
 """
 
 import uuid
+import hashlib
 import secrets
 import logging
 from django.conf import settings as django_settings
@@ -249,19 +250,30 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
         self.last_failed_login = None
         self.lockout_until = None
 
+    @staticmethod
+    def _hash_token(raw_token: str) -> str:
+        """SHA-256 hash a token before database storage. Never store raw tokens."""
+        return hashlib.sha256(raw_token.encode()).hexdigest()
+
     def generate_email_verification_token(self):
-        """Generate a secure email verification token."""
-        self.email_verification_token = secrets.token_urlsafe(32)
+        """Generate a secure email verification token.
+
+        Stores only the SHA-256 hash in the DB; returns the raw token for
+        inclusion in the email link. Callers must not log or persist the
+        returned value — treat it like a password.
+        """
+        raw = secrets.token_urlsafe(32)
+        self.email_verification_token = self._hash_token(raw)
         self.email_verification_sent_at = timezone.now()
         self.save(update_fields=['email_verification_token', 'email_verification_sent_at'])
-        return self.email_verification_token
+        return raw  # raw token goes in email link; DB holds only the hash
 
     def verify_email(self, token):
         """Verify email with token."""
         security = getattr(django_settings, 'SECURITY', {})
         expiry_hours = security.get('EMAIL_VERIFICATION_EXPIRY_HOURS', 24)
 
-        if self.email_verification_token == token:
+        if self.email_verification_token == self._hash_token(token):
             # Check if token is not expired
             if self.email_verification_sent_at:
                 expiry = self.email_verification_sent_at + timezone.timedelta(hours=expiry_hours)
@@ -276,18 +288,23 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
         return False
 
     def generate_password_reset_token(self):
-        """Generate a secure password reset token."""
-        self.password_reset_token = secrets.token_urlsafe(32)
+        """Generate a secure password reset token.
+
+        Stores only the SHA-256 hash in the DB; returns the raw token for
+        inclusion in the reset link.
+        """
+        raw = secrets.token_urlsafe(32)
+        self.password_reset_token = self._hash_token(raw)
         self.password_reset_sent_at = timezone.now()
         self.save(update_fields=['password_reset_token', 'password_reset_sent_at'])
-        return self.password_reset_token
+        return raw  # raw token goes in reset link; DB holds only the hash
 
     def reset_password(self, token, new_password):
         """Reset password with token."""
         security = getattr(django_settings, 'SECURITY', {})
         expiry_minutes = security.get('PASSWORD_RESET_EXPIRY_MINUTES', 15)
 
-        if self.password_reset_token == token:
+        if self.password_reset_token == self._hash_token(token):
             # Check if token is not expired
             if self.password_reset_sent_at:
                 expiry = self.password_reset_sent_at + timezone.timedelta(minutes=expiry_minutes)

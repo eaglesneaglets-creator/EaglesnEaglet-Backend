@@ -744,7 +744,7 @@ class ProgressService:
 
     @staticmethod
     def grade_submission(
-        eagle, submission_id: str, grade: str, feedback: str
+        eagle, submission_id: str, grade: str, feedback: str, assignment_id: str = None
     ) -> AssignmentSubmission:
         """Grade an assignment submission (Eagle only)."""
         try:
@@ -752,6 +752,10 @@ class ProgressService:
                 "assignment__nest", "assignment__module__nest"
             ).get(pk=submission_id)
         except AssignmentSubmission.DoesNotExist:
+            raise NotFound("Submission not found.")
+
+        # Verify the submission belongs to the assignment in the URL path (H8).
+        if assignment_id and str(submission.assignment_id) != str(assignment_id):
             raise NotFound("Submission not found.")
 
         # Standalone assignments have a direct nest FK; module-linked ones use module.nest

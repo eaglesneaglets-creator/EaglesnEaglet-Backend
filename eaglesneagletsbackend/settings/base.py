@@ -112,7 +112,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Internationalization
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'Africa/Lagos'
+TIME_ZONE = 'Africa/Accra'
 USE_I18N = True
 USE_TZ = True
 
@@ -231,6 +231,21 @@ CELERY_TASK_ALWAYS_EAGER = False
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_TASK_TIME_LIMIT = 300  # 5 minutes
 CELERY_TASK_SOFT_TIME_LIMIT = 240  # 4 minutes
+
+# Celery Beat — periodic tasks
+from celery.schedules import crontab
+CELERY_BEAT_SCHEDULE = {
+    # Clean up expired UserSession rows once a day at 03:00 UTC
+    'cleanup-expired-sessions': {
+        'task': 'users.cleanup_expired_sessions',
+        'schedule': crontab(hour=3, minute=0),
+    },
+    # C8: pg_dump backup — runs daily at 02:00 UTC, keeps last 7 files
+    'backup-database': {
+        'task': 'users.backup_database',
+        'schedule': crontab(hour=2, minute=0),
+    },
+}
 
 
 # File Upload Settings

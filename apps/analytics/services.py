@@ -195,7 +195,6 @@ class AnalyticsService:
 
         # Weekly Check-ins (last 7 days)
         today = timezone.now().date()
-        weekly_checkins = []
         checkin_dates = set(
             PointTransaction.objects.filter(
                 user=eaglet,
