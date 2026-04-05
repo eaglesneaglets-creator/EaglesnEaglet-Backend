@@ -9,8 +9,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
-from core.permissions import IsAdmin, IsNestMember
-
 from .services import AnalyticsService
 
 
@@ -27,51 +25,28 @@ class AnalyticsViewSet(ViewSet):
     permission_classes = [IsAuthenticated]
 
     def eagle_dashboard(self, request):
-        """Eagle dashboard stats (cached for 5 min)."""
-        from django.core.cache import cache
-        cache_key = f"eagle_stats_{request.user.id}"
-        data = cache.get(cache_key)
-        
-        if not data:
-            data = AnalyticsService.get_eagle_dashboard_stats(request.user)
-            cache.set(cache_key, data, 300)
-            
+        """Eagle dashboard stats (caching handled by AnalyticsService)."""
+        data = AnalyticsService.get_eagle_dashboard_stats(request.user)
         return Response({"success": True, "data": data})
 
     def eaglet_dashboard(self, request):
-        """Eaglet dashboard stats (cached for 5 min)."""
-        from django.core.cache import cache
-        cache_key = f"eaglet_stats_{request.user.id}"
-        data = cache.get(cache_key)
-        
-        if not data:
-            data = AnalyticsService.get_eaglet_dashboard_stats(request.user)
-            cache.set(cache_key, data, 300)
-            
+        """Eaglet dashboard stats (caching handled by AnalyticsService)."""
+        data = AnalyticsService.get_eaglet_dashboard_stats(request.user)
         return Response({"success": True, "data": data})
 
     def admin_dashboard(self, request):
-        """Admin dashboard stats (admin only, cached for 10 min)."""
+        """Admin dashboard stats (admin only, caching handled by AnalyticsService)."""
         if not (request.user.is_staff or request.user.is_superuser):
             return Response(
                 {"success": False, "error": {"message": "Admin access required."}},
                 status=403,
             )
-            
-        from django.core.cache import cache
-        cache_key = "admin_stats_global"
-        data = cache.get(cache_key)
-        
-        if not data:
-            data = AnalyticsService.get_admin_dashboard_stats()
-            cache.set(cache_key, data, 600)
-            
+        data = AnalyticsService.get_admin_dashboard_stats()
         return Response({"success": True, "data": data})
 
     def nest_analytics(self, request, pk=None):
-        """Analytics for a specific Nest (owner or member only, cached for 5 min)."""
+        """Analytics for a specific Nest (owner or member only)."""
         from apps.nests.models import Nest, NestMembership
-        from django.core.cache import cache
 
         if not (request.user.is_staff or request.user.is_superuser):
             is_owner = Nest.objects.filter(pk=pk, eagle=request.user).exists()
@@ -84,13 +59,7 @@ class AnalyticsViewSet(ViewSet):
                     status=403,
                 )
 
-        cache_key = f"nest_stats_{pk}"
-        data = cache.get(cache_key)
-        
-        if not data:
-            data = AnalyticsService.get_nest_analytics(pk)
-            cache.set(cache_key, data, 300)
-            
+        data = AnalyticsService.get_nest_analytics(pk)
         return Response({"success": True, "data": data})
 
     def check_in(self, request):

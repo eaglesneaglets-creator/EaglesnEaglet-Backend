@@ -5,6 +5,7 @@ API endpoints for points dashboard, transactions, leaderboard,
 badges, and admin configuration.
 """
 
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -116,10 +117,16 @@ class LeaderboardViewSet(ViewSet):
     permission_classes = [IsAuthenticated]
 
     def list(self, request):
-        """Get leaderboard rankings."""
+        """Get leaderboard rankings — results cached in Redis for 5 minutes."""
         scope = request.query_params.get("scope", "global")
         period = request.query_params.get("period", "all")
         nest_id = request.query_params.get("nest")
+
+        # C10: parameterised cache key — all three params affect the result
+        cache_key = f"leaderboard:{scope}:{nest_id or 'global'}:{period}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response({"success": True, "data": cached})
 
         entries = PointService.get_leaderboard(scope, nest_id, period)
 
@@ -130,6 +137,7 @@ class LeaderboardViewSet(ViewSet):
             ranked.append(entry)
 
         serializer = LeaderboardEntrySerializer(ranked, many=True)
+        cache.set(cache_key, serializer.data, timeout=300)  # 5-minute TTL
         return Response({"success": True, "data": serializer.data})
 
 

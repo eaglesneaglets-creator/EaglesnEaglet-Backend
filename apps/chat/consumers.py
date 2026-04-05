@@ -1,10 +1,10 @@
 """
 Chat WebSocket Consumer
 
-URL: ws/chat/{conversation_id}/?token=<jwt>
+URL: ws/chat/{conversation_id}/
 
-Authentication: JWT extracted from query string (browsers cannot set
-custom headers on WebSocket connections).
+Authentication: JWT read from the httpOnly `access_token` cookie sent
+automatically by the browser on the WebSocket Upgrade handshake.
 
 Messages in:
   {"type": "chat.message", "content": "..."}
@@ -31,7 +31,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         self.conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
         self.group_name = f"chat_{self.conversation_id}"
 
-        token = self._get_token_from_query()
+        token = self._get_token_from_cookie()
         user = await self._authenticate(token)
         if user is None:
             await self.close(code=4001)
@@ -133,12 +133,14 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
     # ── Auth helpers ────────────────────────────────────────────────────────
 
-    def _get_token_from_query(self) -> str | None:
-        from urllib.parse import parse_qs
-        query_string = self.scope.get("query_string", b"").decode()
-        params = parse_qs(query_string)
-        tokens = params.get("token", [])
-        return tokens[0] if tokens else None
+    def _get_token_from_cookie(self) -> str | None:
+        """Read JWT from the httpOnly access_token cookie (set by Phase 07 cookie auth).
+
+        Browsers send cookies automatically on the WebSocket Upgrade handshake,
+        so the token never appears in URLs or server access logs.
+        """
+        cookies = self.scope.get("cookies", {})
+        return cookies.get("access_token")
 
     async def _authenticate(self, token_str: str | None):
         if not token_str:

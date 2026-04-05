@@ -148,7 +148,10 @@ class MembershipService:
         if req.nest.eagle_id != eagle.id:
             raise PermissionDenied("Only the Nest owner can approve requests.")
 
-        if req.nest.is_full:
+        # Lock the Nest row so concurrent approvals cannot both pass the is_full
+        # check before either transaction commits (H7 — member_count race).
+        nest = Nest.objects.select_for_update().get(pk=req.nest_id)
+        if nest.is_full:
             raise ValidationError({"nest": "This Nest is full."})
 
         req.status = MentorshipRequest.Status.APPROVED

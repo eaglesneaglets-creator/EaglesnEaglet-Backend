@@ -12,6 +12,18 @@ import re
 logger = logging.getLogger('django.security')
 
 
+def get_client_ip(request):
+    """
+    Return the real client IP.
+    Railway injects the real IP as the LAST entry in X-Forwarded-For.
+    Never trust the first entry — it can be spoofed by the client.
+    """
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        return x_forwarded_for.split(',')[-1].strip()
+    return request.META.get('REMOTE_ADDR', '127.0.0.1')
+
+
 class SecurityHeadersMiddleware:
     """
     Adds comprehensive security headers to all responses.
@@ -85,7 +97,7 @@ class RateLimitByIPMiddleware:
         is_sensitive = any(p.match(path) for p in self.compiled_patterns)
 
         if is_sensitive:
-            ip = self.get_client_ip(request)
+            ip = get_client_ip(request)
             cache_key = f'rate_limit:{ip}:{path}'
 
             # Get current request count
@@ -106,19 +118,6 @@ class RateLimitByIPMiddleware:
             cache.set(cache_key, request_count + 1, 60)
 
         return self.get_response(request)
-
-    def get_client_ip(self, request):
-        """
-        Return the real client IP.
-        Railway injects the real IP as the LAST entry in X-Forwarded-For.
-        Never trust the first entry — it can be spoofed by the client.
-        """
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[-1].strip()
-        else:
-            ip = request.META.get('REMOTE_ADDR', '127.0.0.1')
-        return ip
 
 
 class SQLInjectionProtectionMiddleware:
@@ -155,7 +154,7 @@ class SQLInjectionProtectionMiddleware:
                 logger.warning(
                     f'Potential SQL injection attempt detected',
                     extra={
-                        'ip': self.get_client_ip(request),
+                        'ip': get_client_ip(request),
                         'path': request.path,
                         'query': query_string[:500],
                     }
@@ -166,14 +165,3 @@ class SQLInjectionProtectionMiddleware:
                 )
 
         return self.get_response(request)
-
-    def get_client_ip(self, request):
-        """
-        Return the real client IP.
-        Railway injects the real IP as the LAST entry in X-Forwarded-For.
-        Never trust the first entry — it can be spoofed by the client.
-        """
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            return x_forwarded_for.split(',')[-1].strip()
-        return request.META.get('REMOTE_ADDR', '127.0.0.1')

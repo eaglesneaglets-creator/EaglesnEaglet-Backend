@@ -136,11 +136,14 @@ class ChatService:
             message__conversation=conversation,
         ).values_list("message_id", flat=True)
 
-        unread = Message.objects.filter(
-            conversation=conversation,
-        ).exclude(id__in=already_read)
+        # Fetch only IDs — no need to load full Message objects into memory (H10).
+        unread_ids = list(
+            Message.objects.filter(
+                conversation=conversation,
+            ).exclude(id__in=already_read).values_list("id", flat=True)
+        )
 
-        reads = [MessageRead(message=msg, user=user) for msg in unread]
+        reads = [MessageRead(message_id=msg_id, user=user) for msg_id in unread_ids]
         MessageRead.objects.bulk_create(reads, ignore_conflicts=True)
         return len(reads)
 

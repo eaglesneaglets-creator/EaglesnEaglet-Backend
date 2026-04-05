@@ -9,7 +9,7 @@ import logging
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Sum, Count, Max, Q
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
@@ -91,8 +91,14 @@ class PointService:
             points_to_award, user.email, activity_type,
         )
 
-        # Check for new badges
-        PointService.check_and_award_badges(user)
+        # Evaluate badges asynchronously — keeps award_points() fast and ensures
+        # a badge evaluation failure cannot roll back the point transaction.
+        try:
+            from .tasks import check_and_award_badges_async
+            check_and_award_badges_async.delay(str(user.id))
+        except Exception:
+            # Celery unavailable (e.g. local dev without worker) — fall back to sync
+            PointService.check_and_award_badges(user)
 
         return txn
 
@@ -243,21 +249,15 @@ class PointService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def check_and_award_badges(user):
-        """Check all badge criteria and award any newly earned badges (Eaglets only)."""
-        if getattr(user, 'role', None) != 'eaglet':
-            return
+    def _build_badge_stats(user) -> dict:
+        """
+        Build a dict mapping each CriteriaType to the user's current stat value.
+        Shared by check_and_award_badges() and get_badge_progress().
+        """
         from apps.content.models import ContentProgress, AssignmentSubmission
-        from apps.points.models import PointTransaction
 
-        total_points = PointService.get_user_total_points(user)
-        earned_badge_ids = set(
-            UserBadge.objects.filter(user=user).values_list("badge_id", flat=True)
-        )
-
-        # Build stats dict — import models lazily to avoid circular imports
         stats = {
-            Badge.CriteriaType.POINTS_THRESHOLD: total_points,
+            Badge.CriteriaType.POINTS_THRESHOLD: PointService.get_user_total_points(user),
             Badge.CriteriaType.COURSES_COMPLETED: ContentProgress.objects.filter(
                 user=user, status="completed"
             ).values("content_item__module").distinct().count(),
@@ -267,8 +267,7 @@ class PointService:
             Badge.CriteriaType.STREAK_DAYS: PointService.get_user_streak(user),
         }
 
-        # Add community/quiz/events/nests stats — these models may not exist yet,
-        # so fall back to 0 if the model is unavailable
+        # Community/quiz/events/nests stats — fall back to 0 if model unavailable
         try:
             from apps.nests.models import NestPost, NestPostComment
             stats[Badge.CriteriaType.COMMUNITY_CONTRIBUTIONS] = (
@@ -302,6 +301,19 @@ class PointService:
         except Exception:
             stats[Badge.CriteriaType.NESTS_JOINED] = 0
 
+        return stats
+
+    @staticmethod
+    def check_and_award_badges(user):
+        """Check all badge criteria and award any newly earned badges (Eaglets only)."""
+        if getattr(user, 'role', None) != 'eaglet':
+            return
+
+        earned_badge_ids = set(
+            UserBadge.objects.filter(user=user).values_list("badge_id", flat=True)
+        )
+        stats = PointService._build_badge_stats(user)
+
         # ONE_TIME_EVENT and COMPETITIVE are never awarded inside this loop
         eligible_badges = Badge.objects.exclude(
             id__in=earned_badge_ids
@@ -319,8 +331,6 @@ class PointService:
         ]
 
         if new_awards:
-            # bulk_create doesn't return loaded FK relations on all DB backends.
-            # Iterate new_awards — badge objects are already in memory from the queryset.
             UserBadge.objects.bulk_create(new_awards, ignore_conflicts=True)
             for ub in new_awards:
                 logger.info("Badge earned: %s by %s", ub.badge.name, user.email)
@@ -366,51 +376,8 @@ class PointService:
         Return the user's current stat value for a given badge's criteria type.
         Used to render progress bars on locked badges in the frontend.
         """
-        from django.db.models import Sum
-        from apps.content.models import ContentProgress, AssignmentSubmission
-        from apps.points.models import PointTransaction
-
-        ct = badge.criteria_type
-
-        if ct == Badge.CriteriaType.POINTS_THRESHOLD:
-            result = PointTransaction.objects.filter(user=user).aggregate(total=Sum("points"))
-            return result["total"] or 0
-        if ct == Badge.CriteriaType.COURSES_COMPLETED:
-            return ContentProgress.objects.filter(
-                user=user, status="completed"
-            ).values("content_item__module").distinct().count()
-        if ct == Badge.CriteriaType.ASSIGNMENTS_SUBMITTED:
-            return AssignmentSubmission.objects.filter(user=user).count()
-        if ct == Badge.CriteriaType.STREAK_DAYS:
-            return PointService.get_user_streak(user)
-        if ct == Badge.CriteriaType.COMMUNITY_CONTRIBUTIONS:
-            try:
-                from apps.nests.models import NestPost, NestPostComment
-                return (
-                    NestPost.objects.filter(author=user).count() +
-                    NestPostComment.objects.filter(author=user).count()
-                )
-            except Exception:
-                return 0
-        if ct == Badge.CriteriaType.QUIZZES_PASSED:
-            try:
-                from apps.content.models import ModuleAssignmentAttempt
-                return ModuleAssignmentAttempt.objects.filter(user=user, passed=True).count()
-            except Exception:
-                return 0
-        if ct == Badge.CriteriaType.EVENTS_ATTENDED:
-            try:
-                from apps.nests.models import EventAttendance
-                return EventAttendance.objects.filter(user=user).count()
-            except Exception:
-                return 0
-        if ct == Badge.CriteriaType.NESTS_JOINED:
-            try:
-                from apps.nests.models import NestMembership
-                return NestMembership.objects.filter(user=user, status="active").count()
-            except Exception:
-                return 0
-        return 0  # ONE_TIME_EVENT and COMPETITIVE have no measurable progress
+        stats = PointService._build_badge_stats(user)
+        return stats.get(badge.criteria_type, 0)
 
     @staticmethod
     def get_user_streak(user) -> int:
@@ -443,6 +410,7 @@ class PointService:
     def get_user_badges(user):
         """Return badges earned by a user."""
         return UserBadge.objects.filter(user=user).select_related("badge")
+
     @staticmethod
     def get_user_points_summary(user) -> dict:
         """
