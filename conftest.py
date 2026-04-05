@@ -145,6 +145,11 @@ def mentor_kyc(eagle_user, mentor_kyc_data):
     """Create a MentorKYC record for testing."""
     from apps.users.models import MentorKYC
 
+    # phone_number is stored on User, not on MentorKYC.
+    # Set it here so is_complete() can find it via self.user.phone_number.
+    eagle_user.phone_number = '+233201234567'
+    eagle_user.save(update_fields=['phone_number'])
+
     kyc = MentorKYC.objects.create(
         user=eagle_user,
         **mentor_kyc_data
