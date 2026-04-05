@@ -21,8 +21,11 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
 
     async def connect(self):
         token = self._get_token_from_cookie()
+        if not token:
+            logger.warning("NotificationConsumer: no access_token cookie in WebSocket upgrade")
         user = await self._authenticate(token)
         if user is None:
+            logger.warning("NotificationConsumer: auth failed (token=%s)", "present" if token else "missing")
             await self.close(code=4001)
             return
 
