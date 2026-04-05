@@ -167,7 +167,10 @@ class TestInitializePayment:
             {},
             format="json",
         )
-        assert r.status_code == 401
+        # InitializePaymentView uses authentication_classes=[] for guest support.
+        # An unauthenticated request takes the guest path and cannot find a
+        # user-owned order (user__isnull=True filter) → 404 instead of 401.
+        assert r.status_code == 404
 
     @_patch("apps.store.views.PaystackService.initialize_payment")
     def test_paid_order_cannot_reinitialize(self, mock_init, api, user, db):
@@ -216,6 +219,7 @@ class TestVerifyPayment:
 
     def test_verify_order_without_reference_returns_400(self, api, user, pending_order_for_user):
         """Order with no paystack_reference set must return 400."""
+        api.force_authenticate(user=user)
         r = api.post(
             f"/api/v1/store/orders/{pending_order_for_user.id}/verify/",
             {},

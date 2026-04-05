@@ -194,6 +194,7 @@ class TestAuthenticationAPI:
             'first_name': 'New',
             'last_name': 'User',
             'role': 'eaglet',
+            'terms_accepted': True,
         }
 
         response = api_client.post(url, data, format='json')
@@ -463,8 +464,8 @@ class TestFileUpload:
 
         response = authenticated_client.post(url, {'file': image}, format='multipart')
 
-        # Should succeed or return error about file format (since our test image is not valid)
-        assert response.status_code in [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST]
+        # Should succeed, return file error, or 503 if storage (Cloudinary) is unconfigured
+        assert response.status_code in [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST, status.HTTP_503_SERVICE_UNAVAILABLE]
 
     def test_upload_cv(self, authenticated_client):
         """Test uploading a CV."""
@@ -479,8 +480,8 @@ class TestFileUpload:
 
         response = authenticated_client.post(url, {'file': cv}, format='multipart')
 
-        # Should succeed or return error about file format
-        assert response.status_code in [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST]
+        # Should succeed, return file error, or 503 if storage (Cloudinary) is unconfigured
+        assert response.status_code in [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST, status.HTTP_503_SERVICE_UNAVAILABLE]
 
 
 # =============================================================================

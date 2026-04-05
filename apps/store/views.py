@@ -41,6 +41,8 @@ from .serializers import (
 )
 from .services import StoreService
 from .models import Product as ProductModel, Order, OrderStatusHistory
+from .payments import PaystackService
+from .tasks import process_successful_payment
 
 
 def success(data, status_code=status.HTTP_200_OK, meta=None):
@@ -453,7 +455,6 @@ class InitializePaymentView(APIView):
 
     def post(self, request, pk=None):
         from rest_framework.exceptions import NotFound as DRFNotFound
-        from .payments import PaystackService
 
         # Fetch order — authenticated users get ownership check, guests get guest order
         try:
@@ -501,7 +502,6 @@ class VerifyPaymentView(APIView):
 
     def post(self, request, pk=None):
         from rest_framework.exceptions import NotFound as DRFNotFound
-        from .payments import PaystackService
 
         # Support both authenticated user orders and guest orders
         try:
@@ -556,9 +556,6 @@ class PaystackWebhookView(APIView):
     authentication_classes = []  # Paystack server-to-server: no JWT to parse
 
     def post(self, request):
-        from .payments import PaystackService
-        from .tasks import process_successful_payment
-
         signature = request.META.get("HTTP_X_PAYSTACK_SIGNATURE", "")
         payload = request.body  # raw bytes — MUST be read before any parsing
 

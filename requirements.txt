@@ -69,7 +69,6 @@ mypy_extensions==1.1.0
 nodeenv==1.10.0
 packaging==26.0
 pathspec==1.0.4
-paystack-python==0.1
 paystack-sdk==1.0.1
 pillow==12.1.1
 platformdirs==4.9.2

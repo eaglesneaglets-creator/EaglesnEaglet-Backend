@@ -1,0 +1,108 @@
+name: Backend CI / CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 1: Lint, migrate, test
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test_eaglesneaglets
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DJANGO_ENV: local
+      SECRET_KEY: ci-test-secret-key-not-used-in-production
+      DEBUG: "True"
+      DB_NAME: test_eaglesneaglets
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      REDIS_URL: redis://localhost:6379/0
+      FRONTEND_URL: http://localhost:5173
+      SUPPORT_EMAIL: ci@example.com
+      EMAIL_HOST: ""
+      EMAIL_HOST_USER: ""
+      EMAIL_HOST_PASSWORD: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run migrations
+        run: python manage.py migrate --noinput
+
+      - name: Run tests
+        run: pytest --tb=short -q --no-header
+
+# ─────────────────────────────────────────────────────────────────────────────
+# JOB 2: Deploy to Railway (main branch only)
+# ─────────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy → Railway
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service backend --detach
+
+      - name: Deployment summary
+        run: |
+          echo "✅ Backend deployed to Railway"
+          echo "Commit: ${{ github.sha }}"
+          echo "Triggered by: ${{ github.actor }}"
