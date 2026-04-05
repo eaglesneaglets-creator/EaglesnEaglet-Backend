@@ -106,9 +106,10 @@ def test_mark_order_paid_idempotent_second_call_no_update(pending_order, django_
     StoreService.mark_order_paid(pending_order.paystack_reference, "txn_first")
 
     # Second call — must NOT issue an UPDATE.
-    # Expects exactly 2 queries: BEGIN (implicit in atomic) + SELECT FOR UPDATE
+    # Expects exactly 3 queries: SAVEPOINT + SELECT FOR UPDATE + RELEASE SAVEPOINT.
+    # (Django uses SAVEPOINTs when atomic() is nested inside the test's outer transaction.)
     # The early-return guard skips the UPDATE entirely.
-    with django_assert_num_queries(2):
+    with django_assert_num_queries(3):
         order2 = StoreService.mark_order_paid(pending_order.paystack_reference, "txn_second")
 
     assert order2.status == Order.Status.PAID

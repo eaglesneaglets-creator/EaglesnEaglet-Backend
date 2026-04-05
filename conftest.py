@@ -115,7 +115,6 @@ def mentor_kyc_data():
     """Return valid mentor KYC data."""
     return {
         'location': 'Accra, Ghana',
-        'phone_number': '+233201234567',
         'national_id_number': 'GHA-1234567890',
         'marital_status': 'single',
         'employment_status': 'employed',

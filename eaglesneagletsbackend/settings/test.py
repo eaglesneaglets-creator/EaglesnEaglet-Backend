@@ -60,8 +60,14 @@ CHANNEL_LAYERS = {
 }
 
 
-# Disable throttling for tests
+# Disable throttling for tests.
+# DEFAULT_THROTTLE_CLASSES only controls the global default — views that set
+# throttle_classes explicitly (e.g. RegisterView) are unaffected.
+# Setting very high rates for those scopes neutralises per-view throttles too.
 REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = []
+REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['register'] = '10000/day'
+REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['login'] = '10000/day'
+REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']['password_reset'] = '10000/day'
 
 
 # Celery - Run tasks synchronously in tests (eager=False so retry logic is testable)

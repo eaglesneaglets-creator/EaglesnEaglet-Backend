@@ -38,9 +38,9 @@ class UserManager(BaseUserManager):
 
     def create_user(self, email, password=None, **extra_fields):
         if not email:
-            raise ValueError('Users must have an email address')
+            raise ValueError('Email is required')
 
-        email = self.normalize_email(email)
+        email = self.normalize_email(email).lower()
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
@@ -350,7 +350,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
         """Soft delete the user."""
         self.deleted_at = timezone.now()
         self.is_active = False
-        self.email = f'deleted_{self.id}_{self.email}'
+        self.email = f'deleted_{self.id}@deleted.invalid'
         self.save(update_fields=['deleted_at', 'is_active', 'email'])
 
 
