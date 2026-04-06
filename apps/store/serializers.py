@@ -153,6 +153,12 @@ class OrderListSerializer(serializers.ModelSerializer):
 
 class OrderDetailSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
+    customer_email = serializers.SerializerMethodField()
+
+    def get_customer_email(self, obj):
+        if obj.user_id:
+            return obj.user.email
+        return obj.guest_email or ""
 
     class Meta:
         model = Order
@@ -160,6 +166,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             "id", "status", "total_amount", "items",
             "paystack_reference", "paystack_transaction_id",
             "receipt_url", "shipping_address", "created_at",
+            "customer_email",
         ]
 
 

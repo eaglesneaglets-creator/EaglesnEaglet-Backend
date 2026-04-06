@@ -476,12 +476,19 @@ class InitializePaymentView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Set reference before calling Paystack — ensures idempotency key is
-        # persisted even if the Paystack call times out and is retried
-        if not order.paystack_reference:
-            order.paystack_reference = str(order.id)
-            order.status = Order.Status.PAYMENT_PENDING
-            order.save(update_fields=["paystack_reference", "status"])
+        # If Paystack was already initialized for this order, return the stored
+        # reference directly — avoids "Duplicate Transaction Reference" error on retry.
+        if order.paystack_reference:
+            return success({
+                "authorization_url": None,
+                "reference": order.paystack_reference,
+            })
+
+        # First initialization — persist reference before calling Paystack so
+        # the idempotency key is stored even if the Paystack call times out.
+        order.paystack_reference = str(order.id)
+        order.status = Order.Status.PAYMENT_PENDING
+        order.save(update_fields=["paystack_reference", "status"])
 
         # Pass user=None for guest orders — PaystackService uses order.guest_email
         user = request.user if (request.user and request.user.is_authenticated) else None

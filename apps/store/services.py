@@ -402,7 +402,7 @@ class StoreService:
     @staticmethod
     def get_order_detail(user, order_id: str) -> Order:
         try:
-            return Order.objects.prefetch_related(
+            return Order.objects.select_related("user").prefetch_related(
                 "items", "items__product", "items__product__images"
             ).get(pk=order_id, user=user)
         except Order.DoesNotExist:
