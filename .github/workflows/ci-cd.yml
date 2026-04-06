@@ -99,7 +99,7 @@ jobs:
       - name: Deploy
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --service backend --detach
+        run: railway up --service EaglesnEaglet-Backend --detach
 
       - name: Deployment summary
         run: |
