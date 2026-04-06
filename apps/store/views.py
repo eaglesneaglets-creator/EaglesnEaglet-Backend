@@ -451,7 +451,9 @@ class InitializePaymentView(APIView):
     Returns: { success: true, data: { authorization_url, reference } }
     """
     permission_classes = [AllowAny]
-    authentication_classes = []  # guests have no JWT — skip auth parse entirely
+    # No authentication_classes override — use project default (CookieJWTAuthentication).
+    # authenticate() returns None for requests with no token, so guests get AnonymousUser
+    # automatically without raising an error.
 
     def post(self, request, pk=None):
         from rest_framework.exceptions import NotFound as DRFNotFound
@@ -498,7 +500,8 @@ class VerifyPaymentView(APIView):
     Returns: updated OrderDetailSerializer data
     """
     permission_classes = [AllowAny]
-    authentication_classes = []  # allow unauthenticated access for guest orders
+    # No authentication_classes override — CookieJWTAuthentication returns None (not raises)
+    # for requests with no token, so guests get AnonymousUser automatically.
 
     def post(self, request, pk=None):
         from rest_framework.exceptions import NotFound as DRFNotFound
