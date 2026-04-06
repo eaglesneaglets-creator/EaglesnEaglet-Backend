@@ -47,11 +47,19 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
     # ── Private helpers ────────────────────────────────────────────────────
 
     def _get_token_from_cookie(self) -> str | None:
-        """Read JWT from the httpOnly access_token cookie (set by Phase 07 cookie auth).
+        """Read JWT from the query string (?token=) or the httpOnly access_token cookie.
 
-        Browsers send cookies automatically on the WebSocket Upgrade handshake,
-        so the token never appears in URLs or server access logs.
+        Cross-origin WebSocket upgrades (frontend and backend on different Railway
+        subdomains, which are in the Public Suffix List) cause Chrome to block
+        cookies even with SameSite=None. The store token in the query string is
+        the reliable fallback. Cookie is tried first for same-origin clients.
         """
+        # 1. Query string — reliable for cross-origin (Chrome PSL behaviour)
+        from urllib.parse import parse_qs
+        qs = parse_qs(self.scope.get("query_string", b"").decode())
+        if token := qs.get("token", [None])[0]:
+            return token
+        # 2. httpOnly cookie — fallback for same-origin clients
         cookies = self.scope.get("cookies", {})
         return cookies.get("access_token")
 
