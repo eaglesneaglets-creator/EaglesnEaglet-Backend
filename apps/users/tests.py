@@ -2,6 +2,17 @@
 Tests for the Users app.
 
 Covers authentication, KYC/profile management, and admin review functionality.
+
+SECURITY NOTE:
+All passwords used in this test file are TEST PLACEHOLDERS only.
+They use patterns like 'SecurePass123!' and 'TestPassword123!' to clearly
+indicate they are NOT real credentials. These values are used only for:
+- Testing user registration validation
+- Testing login/authentication flows
+- Testing password strength requirements
+
+These test passwords follow Django's default password validators to ensure
+tests accurately reflect production behavior.
 """
 
 import pytest

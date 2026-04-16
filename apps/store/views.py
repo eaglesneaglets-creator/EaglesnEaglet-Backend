@@ -476,17 +476,11 @@ class InitializePaymentView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # If Paystack was already initialized for this order, return the stored
-        # reference directly — avoids "Duplicate Transaction Reference" error on retry.
-        if order.paystack_reference:
-            return success({
-                "authorization_url": None,
-                "reference": order.paystack_reference,
-            })
-
-        # First initialization — persist reference before calling Paystack so
-        # the idempotency key is stored even if the Paystack call times out.
-        order.paystack_reference = str(order.id)
+        # Generate a fresh reference for each attempt — Paystack does not allow
+        # reuse of a reference even for retries on abandoned/failed transactions.
+        # Use order UUID + timestamp suffix to keep it unique and traceable.
+        import time
+        order.paystack_reference = f"{order.id}-{int(time.time())}"
         order.status = Order.Status.PAYMENT_PENDING
         order.save(update_fields=["paystack_reference", "status"])
 

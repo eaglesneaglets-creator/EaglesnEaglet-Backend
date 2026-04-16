@@ -248,6 +248,20 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 
+# Hubtel Mobile Money (Ghana) — payment provider for donations
+HUBTEL_API_KEY = os.environ.get('HUBTEL_API_KEY', '')
+HUBTEL_API_SECRET = os.environ.get('HUBTEL_API_SECRET', '')
+HUBTEL_MERCHANT_ID = os.environ.get('HUBTEL_MERCHANT_ID', '')
+HUBTEL_POS_SALES_ID = os.environ.get('HUBTEL_POS_SALES_ID', '')
+# Hubtel SMS (Programmable Keys — separate credentials from payment keys)
+HUBTEL_SMS_CLIENT_ID = os.environ.get('HUBTEL_SMS_CLIENT_ID', '')
+HUBTEL_SMS_CLIENT_SECRET = os.environ.get('HUBTEL_SMS_CLIENT_SECRET', '')
+HUBTEL_SMS_SENDER_ID = os.environ.get('HUBTEL_SMS_SENDER_ID', 'EaglesNest')
+
+# Public URL of this backend (used for Hubtel callback URLs)
+BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:8000')
+
+
 # File Upload Settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB

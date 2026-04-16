@@ -61,7 +61,7 @@ api_v1_patterns = [
     path('points/', include('apps.points.urls')),
     path('chat/', include('apps.chat.urls')),
     path('store/', include('apps.store.urls')),
-    # path('donations/', include('apps.donations.urls')),
+    path('donations/', include('apps.donations.urls')),
     path('notifications/', include('apps.notifications.urls')),
     path('analytics/', include('apps.analytics.urls')),
 ]

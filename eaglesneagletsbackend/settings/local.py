@@ -20,6 +20,25 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,0.0.0.0,bac
 # Frontend URL for email links
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
 
+# Hubtel Mobile Money — read via decouple so .env values are picked up
+HUBTEL_API_KEY = config('HUBTEL_API_KEY', default='')
+HUBTEL_API_SECRET = config('HUBTEL_API_SECRET', default='')
+HUBTEL_MERCHANT_ID = config('HUBTEL_MERCHANT_ID', default='')
+HUBTEL_POS_SALES_ID = config('HUBTEL_POS_SALES_ID', default='')
+BACKEND_URL = config('BACKEND_URL', default='http://localhost:8000')
+# Hubtel SMS (Programmable Keys — separate credentials from payment keys)
+HUBTEL_SMS_CLIENT_ID = config('HUBTEL_SMS_CLIENT_ID', default='')
+HUBTEL_SMS_CLIENT_SECRET = config('HUBTEL_SMS_CLIENT_SECRET', default='')
+HUBTEL_SMS_SENDER_ID = config('HUBTEL_SMS_SENDER_ID', default='EaglesNest')
+
+# Paystack — read via decouple so .env values are picked up
+PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY', default='')
+PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY', default='')
+
+# Paystack — read via decouple so .env values are picked up
+PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY', default='')
+PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY', default='')
+
 # Support email
 SUPPORT_EMAIL = config('SUPPORT_EMAIL', default='support@eaglesneaglets.com')
 

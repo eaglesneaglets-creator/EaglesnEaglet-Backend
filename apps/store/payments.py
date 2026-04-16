@@ -13,11 +13,8 @@ import hashlib
 import hmac
 import logging
 
-import paystack
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
-
-from paystack.api.transaction_ import Transaction
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +24,7 @@ class PaystackService:
     @staticmethod
     def _configure():
         """Set the Paystack SDK secret key from Django settings."""
+        import paystack  # lazy import — package is Python 2 style at module level
         paystack.api_key = settings.PAYSTACK_SECRET_KEY
 
     @staticmethod
@@ -40,6 +38,7 @@ class PaystackService:
         The reference is the Order UUID — serves as the idempotency key.
         Amount is always in pesewas (GHS minor unit) = total_amount * 100.
         """
+        from paystack.api.transaction_ import Transaction  # lazy import
         PaystackService._configure()
 
         email = user.email if user else order.guest_email
@@ -48,7 +47,8 @@ class PaystackService:
 
         # Amount MUST be an integer in the currency's minor unit (pesewas for GHS)
         amount_minor = int(order.total_amount * 100)
-        reference = str(order.id)
+        # Use the reference already stored on the order (set by the view before this call)
+        reference = order.paystack_reference or str(order.id)
         callback_url = f"{settings.FRONTEND_URL}/store/orders/{order.id}?verify=1"
 
         try:
@@ -92,6 +92,7 @@ class PaystackService:
 
         Raises ValidationError if the reference is not found.
         """
+        from paystack.api.transaction_ import Transaction  # lazy import
         PaystackService._configure()
 
         try:

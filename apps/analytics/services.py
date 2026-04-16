@@ -10,7 +10,8 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.db.models import Count, Sum, Q
+from django.db.models import Count, Sum, Q, Avg
+from django.db.models.functions import TruncWeek
 from django.utils import timezone
 
 from apps.nests.models import Nest, NestMembership, MentorshipRequest
@@ -35,6 +36,12 @@ class AnalyticsService:
         elif role == "admin":
             cache.delete("admin_stats_global")
         logger.info("Cleared dashboard cache for user %s (%s)", user_id, role)
+
+    @staticmethod
+    def clear_nest_cache(nest_id: str) -> None:
+        """Invalidate nest analytics cache (call after membership/content changes)."""
+        cache.delete(f"nest_analytics_{nest_id}")
+        logger.info("Cleared nest analytics cache for nest %s", nest_id)
 
     @staticmethod
     def get_eagle_dashboard_stats(eagle) -> dict:
@@ -111,6 +118,42 @@ class AnalyticsService:
                 "link": event.meeting_link,
             })
 
+        # Points awarded per week — last 8 weeks (single GROUP BY query)
+        eight_weeks_ago = timezone.now() - timedelta(weeks=8)
+        points_by_week_qs = (
+            PointTransaction.objects.filter(
+                nest_id__in=nest_ids,
+                source="manual",
+                created_at__gte=eight_weeks_ago,
+            )
+            .annotate(week=TruncWeek("created_at"))
+            .values("week")
+            .annotate(total=Sum("points"))
+            .order_by("week")
+        )
+        points_by_week = [
+            {"week": entry["week"].strftime("%b %d"), "points": entry["total"] or 0}
+            for entry in points_by_week_qs
+        ]
+
+        # Average eaglet completion % per week — last 8 weeks
+        completion_by_week_qs = (
+            NestMembership.objects.filter(
+                nest_id__in=nest_ids,
+                status="active",
+                updated_at__gte=eight_weeks_ago,
+            )
+            .exclude(user=eagle)
+            .annotate(week=TruncWeek("updated_at"))
+            .values("week")
+            .annotate(avg_completion=Avg("progress_percentage"))
+            .order_by("week")
+        )
+        completion_by_week = [
+            {"week": entry["week"].strftime("%b %d"), "completion": round(entry["avg_completion"] or 0, 1)}
+            for entry in completion_by_week_qs
+        ]
+
         result = {
             "total_eaglets": total_eaglets,
             "pending_requests": pending_requests,
@@ -120,6 +163,8 @@ class AnalyticsService:
             "active_nests": sum(1 for n in owned_nests if n.is_active),  # queryset already evaluated
             "eaglets": eaglets_performance,
             "upcoming_sessions": upcoming_sessions,
+            "points_by_week": points_by_week,
+            "completion_by_week": completion_by_week,
         }
         cache.set(cache_key, result, timeout=300)  # 5-minute cache
         return result
@@ -275,6 +320,11 @@ class AnalyticsService:
     @staticmethod
     def get_nest_analytics(nest_id: str) -> dict:
         """Analytics for a specific Nest."""
+        cache_key = f"nest_analytics_{nest_id}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
         members = NestMembership.objects.filter(
             nest_id=nest_id, status="active"
         ).count()
@@ -300,10 +350,12 @@ class AnalyticsService:
             nest_id=nest_id
         ).aggregate(total=Sum("points"))["total"] or 0
 
-        return {
+        result = {
             "active_members": members,
             "total_modules": total_modules,
             "published_modules": published_modules,
             "completion_rate": completion_rate,
             "total_points_earned": total_points,
         }
+        cache.set(cache_key, result, timeout=300)  # 5-minute cache
+        return result
