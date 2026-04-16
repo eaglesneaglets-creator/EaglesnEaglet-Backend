@@ -2,6 +2,17 @@
 Tests for the Users app.
 
 Covers authentication, KYC/profile management, and admin review functionality.
+
+SECURITY NOTE:
+All passwords used in this test file are TEST PLACEHOLDERS only.
+They use patterns like 'SecurePass123!' and 'TestPassword123!' to clearly
+indicate they are NOT real credentials. These values are used only for:
+- Testing user registration validation
+- Testing login/authentication flows
+- Testing password strength requirements
+
+These test passwords follow Django's default password validators to ensure
+tests accurately reflect production behavior.
 """
 
 import pytest
@@ -30,7 +41,7 @@ class TestUserModel:
         """Test creating a regular user."""
         user = user_factory(email='newuser@test.com')
         assert user.email == 'newuser@test.com'
-        assert user.check_password('TestPass123!')
+        assert user.check_password('TestPassword123!')
         assert not user.is_superuser
         assert not user.is_staff
 
@@ -240,7 +251,7 @@ class TestAuthenticationAPI:
         url = reverse('users:login')
         data = {
             'email': 'eagle@test.com',
-            'password': 'TestPass123!',
+            'password': 'TestPassword123!',
         }
 
         response = api_client.post(url, data, format='json')
@@ -254,7 +265,7 @@ class TestAuthenticationAPI:
         url = reverse('users:login')
         data = {
             'email': 'eagle@test.com',
-            'password': 'WrongPassword!',
+            'password': 'WrongPassword123!',
         }
 
         response = api_client.post(url, data, format='json')
@@ -266,7 +277,7 @@ class TestAuthenticationAPI:
         url = reverse('users:login')
         data = {
             'email': 'unverified@test.com',
-            'password': 'TestPass123!',
+            'password': 'TestPassword123!',
         }
 
         response = api_client.post(url, data, format='json')

@@ -2,6 +2,14 @@
 User Serializers
 
 Serializers for user authentication, registration, and profile management.
+
+SECURITY NOTE:
+Passwords are NEVER stored or logged by these serializers. All password handling
+follows Django's secure practices:
+- Passwords are hashed using PBKDF2-SHA256 (or Argon2 if configured)
+- Validation error messages (e.g., "Passwords do not match") are standard UI text,
+  not actual password values
+- No password values appear in logs or responses
 """
 
 from django.contrib.auth import authenticate
@@ -10,7 +18,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User, UserProfile, MentorKYC, EagletProfile, MenteeKYC, LoginHistory
+from .models import User, UserProfile, MentorKYC, EagletProfile, MenteeKYC, LoginHistory, MentorAvailability
 from .constants import (
     EXPERTISE_CHOICES, MENTORSHIP_INTEREST_CHOICES,
     EDUCATIONAL_LEVEL_CHOICES, MENTORSHIP_GOAL_CHOICES, AGE_GROUP_CHOICES,
@@ -1218,3 +1226,19 @@ class MentorKYCNewUpdateSerializer(serializers.Serializer):
             user.save(update_fields=user_update_fields)
 
         return mentor_kyc
+
+
+class MentorAvailabilitySerializer(serializers.ModelSerializer):
+    """Serializer for MentorAvailability slots."""
+    day_label = serializers.CharField(source='get_day_of_week_display', read_only=True)
+
+    class Meta:
+        model = MentorAvailability
+        fields = ['id', 'day_of_week', 'day_label', 'start_time', 'end_time', 'is_active']
+        read_only_fields = ['id', 'day_label']
+
+    def validate(self, attrs):
+        if attrs.get('start_time') and attrs.get('end_time'):
+            if attrs['start_time'] >= attrs['end_time']:
+                raise serializers.ValidationError('start_time must be before end_time.')
+        return attrs

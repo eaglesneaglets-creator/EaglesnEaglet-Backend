@@ -27,7 +27,10 @@ from apps.store.services import StoreService
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
-TEST_SECRET = "test_secret_key_12345"
+# SECURITY NOTE: This is a test placeholder key used ONLY in unit tests.
+# It is NOT a real Paystack secret key. The @override_settings decorator
+# ensures this value is only used during test execution, never in production.
+TEST_PAYSTACK_SECRET = "test_paystack_secret_key_for_unit_tests_only"
 
 
 @pytest.fixture
@@ -49,27 +52,27 @@ def pending_order(db):
     )
 
 
-def _make_sig(payload: bytes, secret: str = TEST_SECRET) -> str:
+def _make_sig(payload: bytes, secret: str = TEST_PAYSTACK_SECRET) -> str:
     """Helper: compute valid HMAC-SHA512 hex digest for a payload."""
     return hmac_mod.new(secret.encode(), payload, hashlib.sha512).hexdigest()
 
 
 # ── validate_webhook_signature ────────────────────────────────────────────────
 
-@override_settings(PAYSTACK_SECRET_KEY=TEST_SECRET)
+@override_settings(PAYSTACK_SECRET_KEY=TEST_PAYSTACK_SECRET)
 def test_valid_signature_accepted():
     payload = b'{"event":"charge.success"}'
     sig = _make_sig(payload)
     assert PaystackService.validate_webhook_signature(payload, sig) is True
 
 
-@override_settings(PAYSTACK_SECRET_KEY=TEST_SECRET)
+@override_settings(PAYSTACK_SECRET_KEY=TEST_PAYSTACK_SECRET)
 def test_invalid_signature_rejected():
     payload = b'{"event":"charge.success"}'
     assert PaystackService.validate_webhook_signature(payload, "badsig") is False
 
 
-@override_settings(PAYSTACK_SECRET_KEY=TEST_SECRET)
+@override_settings(PAYSTACK_SECRET_KEY=TEST_PAYSTACK_SECRET)
 def test_tampered_payload_rejected():
     """Changing even a single byte of the payload must invalidate the signature."""
     payload = b'{"event":"charge.success"}'
@@ -78,7 +81,7 @@ def test_tampered_payload_rejected():
     assert PaystackService.validate_webhook_signature(tampered, sig) is False
 
 
-@override_settings(PAYSTACK_SECRET_KEY=TEST_SECRET)
+@override_settings(PAYSTACK_SECRET_KEY=TEST_PAYSTACK_SECRET)
 def test_empty_signature_rejected():
     assert PaystackService.validate_webhook_signature(b'{"event":"test"}', "") is False
 
@@ -136,7 +139,7 @@ def test_mark_order_paid_unknown_reference_raises():
 # ── Webhook endpoint ──────────────────────────────────────────────────────────
 
 @pytest.mark.django_db
-@override_settings(PAYSTACK_SECRET_KEY=TEST_SECRET)
+@override_settings(PAYSTACK_SECRET_KEY=TEST_PAYSTACK_SECRET)
 def test_webhook_invalid_signature_returns_400(api):
     response = api.post(
         "/api/v1/store/webhook/paystack/",
@@ -148,7 +151,7 @@ def test_webhook_invalid_signature_returns_400(api):
 
 
 @pytest.mark.django_db
-@override_settings(PAYSTACK_SECRET_KEY=TEST_SECRET)
+@override_settings(PAYSTACK_SECRET_KEY=TEST_PAYSTACK_SECRET)
 @patch("apps.store.views.process_successful_payment")
 def test_webhook_valid_charge_success_dispatches_task(mock_task, api):
     payload = json.dumps({
@@ -168,7 +171,7 @@ def test_webhook_valid_charge_success_dispatches_task(mock_task, api):
 
 
 @pytest.mark.django_db
-@override_settings(PAYSTACK_SECRET_KEY=TEST_SECRET)
+@override_settings(PAYSTACK_SECRET_KEY=TEST_PAYSTACK_SECRET)
 @patch("apps.store.views.process_successful_payment")
 def test_webhook_unknown_event_returns_200_no_task(mock_task, api):
     """
@@ -189,7 +192,7 @@ def test_webhook_unknown_event_returns_200_no_task(mock_task, api):
 
 
 @pytest.mark.django_db
-@override_settings(PAYSTACK_SECRET_KEY=TEST_SECRET)
+@override_settings(PAYSTACK_SECRET_KEY=TEST_PAYSTACK_SECRET)
 @patch("apps.store.views.process_successful_payment")
 def test_webhook_missing_reference_does_not_dispatch(mock_task, api):
     """charge.success with no reference field must not dispatch the task."""
@@ -207,3 +210,4 @@ def test_webhook_missing_reference_does_not_dispatch(mock_task, api):
     )
     assert response.status_code == 200
     mock_task.delay.assert_not_called()
+

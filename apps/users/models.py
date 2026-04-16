@@ -1160,3 +1160,41 @@ class MenteeKYC(TimestampMixin):
             self.reviewed_by = reviewer
             self.review_notes = notes
             self.save(update_fields=['status', 'reviewed_at', 'reviewed_by', 'review_notes'])
+
+
+class MentorAvailability(TimestampMixin, models.Model):
+    """
+    Weekly recurring availability slots for Eagle (mentor) users.
+    Each slot represents a recurring time block on a given day of the week.
+    """
+
+    class DayOfWeek(models.IntegerChoices):
+        MONDAY = 0, 'Monday'
+        TUESDAY = 1, 'Tuesday'
+        WEDNESDAY = 2, 'Wednesday'
+        THURSDAY = 3, 'Thursday'
+        FRIDAY = 4, 'Friday'
+        SATURDAY = 5, 'Saturday'
+        SUNDAY = 6, 'Sunday'
+
+    mentor = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='availability_slots',
+        limit_choices_to={'role': 'eagle'},
+    )
+    day_of_week = models.IntegerField(choices=DayOfWeek.choices)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'mentor_availability'
+        ordering = ['day_of_week', 'start_time']
+        unique_together = ['mentor', 'day_of_week', 'start_time']
+        verbose_name = 'Mentor Availability'
+        verbose_name_plural = 'Mentor Availability Slots'
+
+    def __str__(self) -> str:
+        day = self.DayOfWeek(self.day_of_week).label
+        return f"{self.mentor} — {day} {self.start_time:%H:%M}–{self.end_time:%H:%M}"

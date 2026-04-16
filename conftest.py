@@ -18,10 +18,14 @@ def api_client():
 
 @pytest.fixture
 def user_factory(db):
-    """Factory for creating test users."""
+    """Factory for creating test users.
+    
+    SECURITY NOTE: All passwords use clearly labeled test placeholder values.
+    These are NOT real credentials and should never be used in production.
+    """
     def create_user(
         email='test@example.com',
-        password='TestPass123!',
+        password='TestPassword123!',  # Placeholder - not a real credential
         first_name='Test',
         last_name='User',
         role='eaglet',

@@ -13,21 +13,37 @@ from apps.content.models import (
 
 @pytest.fixture
 def eagle_user(db):
+    """Create test eagle user.
+    
+    SECURITY NOTE: Password is a clearly labeled test placeholder,
+    NOT a real credential.
+    """
     from django.contrib.auth import get_user_model
     User = get_user_model()
     return User.objects.create_user(
-        email="eagle@test.com", password="testpass", role="eagle",
-        first_name="Eagle", last_name="User",
+        email="eagle@test.com",
+        password="TestPassword123!",  # Placeholder - not a real credential
+        role="eagle",
+        first_name="Eagle",
+        last_name="User",
     )
 
 
 @pytest.fixture
 def eaglet_user(db):
+    """Create test eagle user.
+    
+    SECURITY NOTE: Password is a clearly labeled test placeholder,
+    NOT a real credential.
+    """
     from django.contrib.auth import get_user_model
     User = get_user_model()
     return User.objects.create_user(
-        email="eaglet@test.com", password="testpass", role="eaglet",
-        first_name="Eaglet", last_name="User",
+        email="eaglet@test.com",
+        password="TestPassword123!",  # Placeholder - not a real credential
+        role="eaglet",
+        first_name="Eaglet",
+        last_name="User",
     )
 
 

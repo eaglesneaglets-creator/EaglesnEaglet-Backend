@@ -92,4 +92,11 @@ urlpatterns = [
     path('admin/users/', views.AdminUserListView.as_view(), name='admin-user-list'),
     path('admin/users/<uuid:user_id>/suspend/', views.AdminSuspendUserView.as_view(), name='admin-suspend-user'),
     path('admin/users/<uuid:user_id>/reactivate/', views.AdminReactivateUserView.as_view(), name='admin-reactivate-user'),
+
+    # =========================================================================
+    # MENTOR AVAILABILITY
+    # =========================================================================
+    path('me/availability/', views.MentorAvailabilityView.as_view(), name='my-availability'),
+    path('me/availability/<int:slot_id>/', views.MentorAvailabilityDetailView.as_view(), name='availability-detail'),
+    path('<uuid:user_id>/availability/', views.PublicMentorAvailabilityView.as_view(), name='public-availability'),
 ]
