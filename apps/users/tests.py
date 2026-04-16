@@ -41,7 +41,7 @@ class TestUserModel:
         """Test creating a regular user."""
         user = user_factory(email='newuser@test.com')
         assert user.email == 'newuser@test.com'
-        assert user.check_password('TestPass123!')
+        assert user.check_password('TestPassword123!')
         assert not user.is_superuser
         assert not user.is_staff
 
@@ -251,7 +251,7 @@ class TestAuthenticationAPI:
         url = reverse('users:login')
         data = {
             'email': 'eagle@test.com',
-            'password': 'TestPass123!',
+            'password': 'TestPassword123!',
         }
 
         response = api_client.post(url, data, format='json')
@@ -265,7 +265,7 @@ class TestAuthenticationAPI:
         url = reverse('users:login')
         data = {
             'email': 'eagle@test.com',
-            'password': 'WrongPassword!',
+            'password': 'WrongPassword123!',
         }
 
         response = api_client.post(url, data, format='json')
@@ -277,7 +277,7 @@ class TestAuthenticationAPI:
         url = reverse('users:login')
         data = {
             'email': 'unverified@test.com',
-            'password': 'TestPass123!',
+            'password': 'TestPassword123!',
         }
 
         response = api_client.post(url, data, format='json')

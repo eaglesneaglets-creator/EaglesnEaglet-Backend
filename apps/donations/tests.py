@@ -132,8 +132,8 @@ class TestHubtelClient:
         assert HubtelClient.format_phone("024 123 4567") == "233241234567"
 
     @patch("apps.donations.hubtel.requests.post")
-    def test_initiate_payment_posts_v2_url(self, mock_post):
-        """initiate_payment must call the v2 Direct Receive Money endpoint."""
+    def test_initiate_payment_posts_v1_url(self, mock_post):
+        """initiate_payment must call the v1 merchant account API."""
         mock_post.return_value = MagicMock(
             status_code=200,
             json=lambda: {"ResponseCode": "0000", "Data": {"CheckoutUrl": "https://pay.hubtel.com/abc"}},
@@ -146,11 +146,11 @@ class TestHubtelClient:
             callback_url="http://localhost/callback/",
         )
         call_url = mock_post.call_args[0][0]
-        assert "v2/pos/onlinecheckout/direct-pay/mobile-money" in call_url
+        assert "receive/mobilemoney" in call_url
 
     @patch("apps.donations.hubtel.requests.post")
-    def test_initiate_payment_payload_has_no_channel_field(self, mock_post):
-        """v2 API auto-detects network — Channel must NOT be in the payload."""
+    def test_initiate_payment_payload_has_channel_field(self, mock_post):
+        """v1 API requires explicit Channel field based on detected network."""
         mock_post.return_value = MagicMock(
             status_code=200,
             json=lambda: {"Data": {"CheckoutUrl": "x"}},
@@ -163,12 +163,12 @@ class TestHubtelClient:
             callback_url="http://localhost/callback/",
         )
         sent_payload = mock_post.call_args[1]["json"]
-        assert "Channel" not in sent_payload
-        assert "channel" not in sent_payload
+        assert "Channel" in sent_payload
+        assert sent_payload["Channel"] == "mtn-gh"
 
     @patch("apps.donations.hubtel.requests.post")
-    def test_initiate_payment_payload_has_pos_sales_id(self, mock_post):
-        """posSalesId is required by the v2 API."""
+    def test_initiate_payment_payload_has_client_reference(self, mock_post):
+        """ClientReference is required for callback matching."""
         mock_post.return_value = MagicMock(
             status_code=200,
             json=lambda: {"Data": {}},
@@ -181,7 +181,8 @@ class TestHubtelClient:
             callback_url="http://localhost/callback/",
         )
         sent_payload = mock_post.call_args[1]["json"]
-        assert "posSalesId" in sent_payload
+        assert "ClientReference" in sent_payload
+        assert sent_payload["ClientReference"] == "DON-TEST"
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +544,8 @@ class TestInitiateDonation:
 
 class TestHubtelCallback:
 
-    def test_v2_callback_success_marks_donation(self, api_client, pending_donation, campaign):
+    @patch("apps.donations.views.HubtelPaymentCallbackView._validate_signature", return_value=True)
+    def test_v2_callback_success_marks_donation(self, mock_sig, api_client, pending_donation, campaign):
         """v2 callback with Status=Success must mark donation as SUCCESS."""
         payload = {
             "Status": "Success",
@@ -553,7 +555,8 @@ class TestHubtelCallback:
         pending_donation.refresh_from_db()
         assert pending_donation.status == Donation.Status.SUCCESS
 
-    def test_v2_callback_success_increments_campaign(self, api_client, pending_donation, campaign):
+    @patch("apps.donations.views.HubtelPaymentCallbackView._validate_signature", return_value=True)
+    def test_v2_callback_success_increments_campaign(self, mock_sig, api_client, pending_donation, campaign):
         original_amount = campaign.current_amount
         payload = {
             "Status": "Success",
@@ -563,7 +566,8 @@ class TestHubtelCallback:
         campaign.refresh_from_db()
         assert campaign.current_amount == original_amount + pending_donation.amount
 
-    def test_v2_callback_failure_marks_failed(self, api_client, pending_donation):
+    @patch("apps.donations.views.HubtelPaymentCallbackView._validate_signature", return_value=True)
+    def test_v2_callback_failure_marks_failed(self, mock_sig, api_client, pending_donation):
         payload = {
             "Status": "Failed",
             "Data": {"ClientReference": pending_donation.hubtel_reference},
@@ -572,7 +576,8 @@ class TestHubtelCallback:
         pending_donation.refresh_from_db()
         assert pending_donation.status == Donation.Status.FAILED
 
-    def test_callback_idempotent(self, api_client, pending_donation, campaign):
+    @patch("apps.donations.views.HubtelPaymentCallbackView._validate_signature", return_value=True)
+    def test_callback_idempotent(self, mock_sig, api_client, pending_donation, campaign):
         """Duplicate success callbacks must not double-count the amount."""
         payload = {
             "Status": "Success",

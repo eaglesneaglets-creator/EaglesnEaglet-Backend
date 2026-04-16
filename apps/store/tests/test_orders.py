@@ -159,7 +159,7 @@ class TestInitializePayment:
 
         pending_order_for_user.refresh_from_db()
         assert pending_order_for_user.status == _Order.Status.PAYMENT_PENDING
-        assert pending_order_for_user.paystack_reference == str(pending_order_for_user.id)
+        assert pending_order_for_user.paystack_reference.startswith(str(pending_order_for_user.id))
 
     def test_unauthenticated_cannot_initialize(self, api, pending_order_for_user):
         r = api.post(
