@@ -132,8 +132,8 @@ class TestHubtelClient:
         assert HubtelClient.format_phone("024 123 4567") == "233241234567"
 
     @patch("apps.donations.hubtel.requests.post")
-    def test_initiate_payment_posts_v1_url(self, mock_post):
-        """initiate_payment must call the v1 merchant account API."""
+    def test_initiate_payment_posts_correct_url(self, mock_post):
+        """initiate_payment must call the merchant account API."""
         mock_post.return_value = MagicMock(
             status_code=200,
             json=lambda: {"ResponseCode": "0000", "Data": {"CheckoutUrl": "https://pay.hubtel.com/abc"}},
@@ -146,11 +146,12 @@ class TestHubtelClient:
             callback_url="http://localhost/callback/",
         )
         call_url = mock_post.call_args[0][0]
+        assert "rmp.hubtel.com" in call_url
         assert "receive/mobilemoney" in call_url
 
     @patch("apps.donations.hubtel.requests.post")
-    def test_initiate_payment_payload_has_channel_field(self, mock_post):
-        """v1 API requires explicit Channel field based on detected network."""
+    def test_initiate_payment_payload_has_pos_sales_id(self, mock_post):
+        """API requires posSalesId field."""
         mock_post.return_value = MagicMock(
             status_code=200,
             json=lambda: {"Data": {"CheckoutUrl": "x"}},
@@ -163,12 +164,11 @@ class TestHubtelClient:
             callback_url="http://localhost/callback/",
         )
         sent_payload = mock_post.call_args[1]["json"]
-        assert "Channel" in sent_payload
-        assert sent_payload["Channel"] == "mtn-gh"
+        assert "posSalesId" in sent_payload
 
     @patch("apps.donations.hubtel.requests.post")
     def test_initiate_payment_payload_has_client_reference(self, mock_post):
-        """ClientReference is required for callback matching."""
+        """clientReference is required for callback matching."""
         mock_post.return_value = MagicMock(
             status_code=200,
             json=lambda: {"Data": {}},
@@ -181,8 +181,8 @@ class TestHubtelClient:
             callback_url="http://localhost/callback/",
         )
         sent_payload = mock_post.call_args[1]["json"]
-        assert "ClientReference" in sent_payload
-        assert sent_payload["ClientReference"] == "DON-TEST"
+        assert "clientReference" in sent_payload
+        assert sent_payload["clientReference"] == "DON-TEST"
 
 
 # ---------------------------------------------------------------------------

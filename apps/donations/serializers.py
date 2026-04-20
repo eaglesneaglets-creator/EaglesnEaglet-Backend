@@ -134,11 +134,22 @@ class InitiateDonationSerializer(serializers.Serializer):
     )
     phone_number = serializers.CharField(max_length=20)
     donor_name = serializers.CharField(max_length=100)
+    # NOTE: recurring donations (weekly/monthly/annually) are deferred to a
+    # post-deployment update. Only one-time donations are accepted for now.
     frequency = serializers.ChoiceField(
-        choices=Donation.Frequency.choices,
+        choices=[(Donation.Frequency.ONCE, "One-time")],
         default=Donation.Frequency.ONCE,
     )
     is_anonymous = serializers.BooleanField(default=False)
+    network = serializers.ChoiceField(
+        choices=[
+            ('mtn-gh', 'MTN'),
+            ('vodafone-gh', 'Telecel'),
+            ('airtel-gh', 'AirtelTigo'),
+        ],
+        required=False,
+        allow_null=True,
+    )
     message = serializers.CharField(
         max_length=500, required=False, default="", allow_blank=True
     )

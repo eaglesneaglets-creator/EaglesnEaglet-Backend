@@ -64,6 +64,7 @@ class DonationService:
         is_anonymous: bool,
         message: str,
         donor=None,
+        network: str = None,
     ) -> dict:
         """
         Create a pending Donation and call the Hubtel API to send a
@@ -78,6 +79,8 @@ class DonationService:
             raise NotFound("Campaign not found or is no longer active.")
 
         phone = HubtelClient.format_phone(phone_number)
+        # Use frontend-provided network or auto-detect
+        channel = network or HubtelClient.detect_channel(phone)
         reference = f"DON-{uuid.uuid4().hex[:12].upper()}"
 
         donation = Donation.objects.create(
@@ -100,6 +103,7 @@ class DonationService:
                 reference=reference,
                 amount=float(amount),
                 phone=phone,
+                channel=channel,
                 donor_name=donor_name,
                 callback_url=callback_url,
             )

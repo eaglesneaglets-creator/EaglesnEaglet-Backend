@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class HubtelClient:
     """
-    Thin wrapper around the Hubtel Receive Money v1 API.
+    Thin wrapper around the Hubtel Receive Money API.
     All amounts are in Ghana Cedis (GHS) as float/Decimal.
     """
 
@@ -97,27 +97,32 @@ class HubtelClient:
         phone: str,
         donor_name: str,
         callback_url: str,
+        channel: str = None,
     ) -> dict:
         """
-        Send a Receive Money request to Hubtel v1 merchant account API.
+        Send a Receive Money request to Hubtel API.
 
         Hubtel dispatches a USSD/prompt to the user's phone.
         Returns the raw Hubtel response dict.
         Raises ValidationError on API or network errors.
         """
-        account = settings.HUBTEL_POS_SALES_ID
+        account = settings.HUBTEL_POS_SALES_ID or settings.HUBTEL_MERCHANT_ID or ''
         url = cls.BASE_URL.format(account=account)
-        channel = cls.detect_channel(phone)
+
+        # Use provided channel or auto-detect from phone number
+        detected_channel = channel or cls.detect_channel(phone)
 
         payload = {
-            "CustomerName": donor_name,
-            "CustomerMsisdn": phone,
-            "Channel": channel,
-            "Amount": float(amount),
-            "PrimaryCallbackURL": callback_url,
-            "Description": "Donation via Eagles & Eaglets",
-            "ClientReference": reference,
+            "customerName": donor_name,
+            "customerMsisdn": cls.format_phone(phone),
+            "channel": detected_channel,
+            "amount": float(amount),
+            "primaryCallbackUrl": callback_url,
+            "clientReference": reference,
+            "description": "Donation via Eagles & Eaglets",
         }
+
+        logger.info("Hubtel initiating payment to URL: %s with channel: %s", url, detected_channel)
 
         try:
             resp = requests.post(
@@ -149,7 +154,6 @@ class HubtelClient:
         """
         Query Hubtel for the current status of a transaction.
 
-        GET /v1/merchantaccount/{account}/transactions/status/{clientReference}
         Returns the raw Hubtel response dict.
         """
         account = settings.HUBTEL_POS_SALES_ID
