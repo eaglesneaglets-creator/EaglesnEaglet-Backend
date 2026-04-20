@@ -493,7 +493,7 @@ class TestInitiateDonation:
                 "amount": "50.00",
                 "phone_number": "0241234567",
                 "donor_name": "Eaglet",
-                "frequency": "monthly",
+                "frequency": "once",
                 "is_anonymous": False,
                 "message": "Keep it up!",
             },

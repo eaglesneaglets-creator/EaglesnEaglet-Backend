@@ -120,6 +120,7 @@ class HubtelClient:
             "primaryCallbackUrl": callback_url,
             "clientReference": reference,
             "description": "Donation via Eagles & Eaglets",
+            "posSalesId": account,
         }
 
         logger.info("Hubtel initiating payment to URL: %s with channel: %s", url, detected_channel)
