@@ -7,6 +7,7 @@ API endpoints for campaigns, Hubtel donation flow, and analytics.
 import logging
 
 from rest_framework import status
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response

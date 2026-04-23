@@ -225,9 +225,7 @@ class DonationService:
         Returns dict with current status.
         """
         try:
-            donation = Donation.objects.select_for_update().select_related(
-                "campaign", "donor"
-            ).get(id=donation_id)
+            donation = Donation.objects.select_related("campaign").get(id=donation_id)
         except Donation.DoesNotExist:
             raise NotFound("Donation not found.")
 
@@ -244,6 +242,9 @@ class DonationService:
 
         hubtel_status = data.get("status", "").lower()
         logger.info("Hubtel status check for %s: %s", donation.hubtel_reference, hubtel_status)
+
+        # Update status in database
+        donation = Donation.objects.select_for_update().get(id=donation_id)
 
         if hubtel_status == "paid":
             donation.status = Donation.Status.SUCCESS
