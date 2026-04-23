@@ -27,7 +27,7 @@ class HubtelClient:
     """
 
     BASE_URL = "https://rmp.hubtel.com/merchantaccount/merchants/{account}/receive/mobilemoney"
-    STATUS_URL = "https://rmp.hubtel.com/merchantaccount/merchants/{account}/transactions/status"
+    STATUS_URL = "https://api-txnstatus.hubtel.com/transactions/{account}/status"
 
     # Ghana network channel detection
     _MTN_PREFIXES = ("024", "054", "055", "059", "025", "026")
@@ -158,7 +158,7 @@ class HubtelClient:
         Returns the raw Hubtel response dict.
         """
         account = settings.HUBTEL_POS_SALES_ID
-        url = f"{cls.STATUS_URL.format(account=account)}/{client_reference}"
+        url = f"{cls.STATUS_URL.format(account=account)}?clientReference={client_reference}"
         try:
             resp = requests.get(url, headers=cls._auth_header(), timeout=15)
             resp.raise_for_status()
