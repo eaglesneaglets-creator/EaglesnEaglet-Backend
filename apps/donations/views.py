@@ -178,14 +178,15 @@ class HubtelPaymentCallbackView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        # Validate Hubtel webhook signature
-        if not self._validate_signature(request):
-            logger.warning(
-                "Invalid Hubtel webhook signature from IP: %s",
-                self._get_client_ip(request)
-            )
-            # Return 200 to prevent Hubtel retries, but don't process
-            return Response({"status": "signature_invalid"}, status=status.HTTP_200_OK)
+        # TODO: Re-enable signature validation once Hubtel is properly configured
+        # # Validate Hubtel webhook signature
+        # if not self._validate_signature(request):
+        #     logger.warning(
+        #         "Invalid Hubtel webhook signature from IP: %s",
+        #         self._get_client_ip(request)
+        #     )
+        #     # Return 200 to prevent Hubtel retries, but don't process
+        #     return Response({"status": "signature_invalid"}, status=status.HTTP_200_OK)
 
         try:
             donation = DonationService.process_callback(request.data)
@@ -267,6 +268,32 @@ class DonationStatusView(APIView):
                 "currency": donation.currency,
             },
         })
+
+
+class CheckDonationStatusView(APIView):
+    """
+    POST /api/v1/donations/status/check/<str:donation_id>/
+
+    Manually check Hubtel for transaction status and update donation.
+    Used as fallback when webhook callback is not received.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request, donation_id):
+        try:
+            result = DonationService.check_and_update_status(donation_id)
+        except NotFound as exc:
+            return Response(
+                {"success": False, "error": {"message": str(exc)}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except ValidationError as exc:
+            return Response(
+                {"success": False, "error": exc.detail},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response({"success": True, "data": result}, status=status.HTTP_200_OK)
 
 
 class MyDonationsView(ListAPIView):

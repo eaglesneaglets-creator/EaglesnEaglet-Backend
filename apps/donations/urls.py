@@ -8,6 +8,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AdminDonationStatsView,
     CampaignViewSet,
+    CheckDonationStatusView,
     DonationStatusView,
     HubtelPaymentCallbackView,
     InitiateDonationView,
@@ -26,6 +27,7 @@ urlpatterns = [
     path("initiate/", InitiateDonationView.as_view(), name="donation-initiate"),
     path("callback/payment/", HubtelPaymentCallbackView.as_view(), name="donation-callback"),
     path("status/<str:donation_id>/", DonationStatusView.as_view(), name="donation-status"),
+    path("status/check/<str:donation_id>/", CheckDonationStatusView.as_view(), name="donation-status-check"),
     path("my-donations/", MyDonationsView.as_view(), name="my-donations"),
     path("admin/stats/", AdminDonationStatsView.as_view(), name="donation-admin-stats"),
 ]

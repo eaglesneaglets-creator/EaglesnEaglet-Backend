@@ -212,6 +212,62 @@ class DonationService:
         return donation
 
     # ------------------------------------------------------------------
+    # Donations — manual status check (fallback when callback fails)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    @transaction.atomic
+    def check_and_update_status(donation_id: str) -> dict:
+        """
+        Check Hubtel for transaction status and update donation if needed.
+        Used as fallback when webhook callback fails.
+
+        Returns dict with current status.
+        """
+        try:
+            donation = Donation.objects.select_for_update().select_related(
+                "campaign", "donor"
+            ).get(id=donation_id)
+        except Donation.DoesNotExist:
+            raise NotFound("Donation not found.")
+
+        # If already in terminal state, return current status
+        if donation.status in (Donation.Status.SUCCESS, Donation.Status.FAILED):
+            return {
+                "status": donation.status,
+                "donation_id": str(donation.id),
+            }
+
+        # Query Hubtel for current status
+        hubtel_response = HubtelClient.check_transaction_status(donation.hubtel_reference)
+        data = hubtel_response.get("data", {})
+
+        hubtel_status = data.get("status", "").lower()
+        logger.info("Hubtel status check for %s: %s", donation.hubtel_reference, hubtel_status)
+
+        if hubtel_status == "paid":
+            donation.status = Donation.Status.SUCCESS
+            Campaign.objects.filter(id=donation.campaign_id).update(
+                current_amount=models.F("current_amount") + donation.amount
+            )
+            logger.info(
+                "Donation SUCCESS (status check): reference=%s amount=%s",
+                donation.hubtel_reference,
+                donation.amount,
+            )
+        elif hubtel_status in ("unpaid", "failed", "cancelled"):
+            donation.status = Donation.Status.FAILED
+            logger.info("Donation FAILED (status check): reference=%s", donation.hubtel_reference)
+        # Else: still pending, leave as-is
+
+        donation.save(update_fields=["status"])
+
+        return {
+            "status": donation.status,
+            "donation_id": str(donation.id),
+        }
+
+    # ------------------------------------------------------------------
     # Analytics
     # ------------------------------------------------------------------
 
