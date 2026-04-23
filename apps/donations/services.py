@@ -169,9 +169,7 @@ class DonationService:
             raise ValidationError({"callback": "Missing payment reference."})
 
         try:
-            donation = Donation.objects.select_for_update().select_related(
-                "campaign", "donor"
-            ).get(hubtel_reference=reference)
+            donation = Donation.objects.select_related("campaign").get(hubtel_reference=reference)
         except Donation.DoesNotExist:
             logger.error("Hubtel callback for unknown reference: %s", reference)
             raise NotFound("Donation not found.")
