@@ -99,4 +99,11 @@ urlpatterns = [
     path('me/availability/', views.MentorAvailabilityView.as_view(), name='my-availability'),
     path('me/availability/<int:slot_id>/', views.MentorAvailabilityDetailView.as_view(), name='availability-detail'),
     path('<uuid:user_id>/availability/', views.PublicMentorAvailabilityView.as_view(), name='public-availability'),
+
+    # =========================================================================
+    # ACCOUNT SETTINGS (Phase 11-02)
+    # =========================================================================
+    path('email/change/request/', views.EmailChangeRequestView.as_view(), name='email-change-request'),
+    path('email/change/confirm/<str:token>/', views.EmailChangeConfirmView.as_view(), name='email-change-confirm'),
+    path('account/delete/', views.AccountDeleteView.as_view(), name='account-delete'),
 ]

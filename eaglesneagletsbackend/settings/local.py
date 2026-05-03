@@ -35,10 +35,6 @@ HUBTEL_SMS_SENDER_ID = config('HUBTEL_SMS_SENDER_ID', default='EaglesNest')
 PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY', default='')
 PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY', default='')
 
-# Paystack — read via decouple so .env values are picked up
-PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY', default='')
-PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY', default='')
-
 # Support email
 SUPPORT_EMAIL = config('SUPPORT_EMAIL', default='support@eaglesneaglets.com')
 

@@ -8,9 +8,15 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSet
 
-from .serializers import NotificationSerializer
+from .models import NotificationPreference
+from .serializers import (
+    NotificationPreferenceUpdateSerializer,
+    NotificationSerializer,
+    build_preferences_response,
+)
 from .services import NotificationService
 
 
@@ -57,3 +63,31 @@ class NotificationViewSet(ViewSet):
         """Mark all notifications as read."""
         count = NotificationService.mark_all_as_read(request.user)
         return Response({"success": True, "data": {"marked_count": count}})
+
+
+class NotificationPreferenceView(APIView):
+    """
+    GET   /notifications/preferences/  → registry-merged prefs grouped by domain
+    PATCH /notifications/preferences/  → bulk upsert
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        data = build_preferences_response(request.user)
+        return Response({"success": True, "data": data})
+
+    def patch(self, request):
+        serializer = NotificationPreferenceUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        for item in serializer.validated_data["preferences"]:
+            NotificationPreference.objects.update_or_create(
+                user=request.user,
+                event_type=item["event_type"],
+                defaults={
+                    "email_enabled": item["email_enabled"],
+                    "inapp_enabled": item["inapp_enabled"],
+                },
+            )
+        data = build_preferences_response(request.user)
+        return Response({"success": True, "data": data}, status=status.HTTP_200_OK)

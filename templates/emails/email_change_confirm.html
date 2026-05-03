@@ -1,0 +1,42 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Confirm Your New Email - Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2>Confirm Your New Email Address</h2>
+
+<p>Hi {{ user.first_name }},</p>
+
+<p>
+    A request was made to change the email address on your Eagles & Eaglets account to <strong>{{ new_email }}</strong>.
+</p>
+
+<p>
+    To confirm this change, click the button below:
+</p>
+
+<div style="text-align: center;">
+    <a href="{{ confirm_url }}" class="button">Confirm New Email</a>
+</div>
+
+<div class="info-box">
+    <p><strong>Important:</strong> This link will expire in {{ expiry_hours }} hours for security reasons.</p>
+</div>
+
+<p>
+    If the button doesn't work, copy and paste this link into your browser:
+</p>
+<p style="word-break: break-all; background-color: #F3F4F6; padding: 12px; border-radius: 4px; font-size: 14px;">
+    {{ confirm_url }}
+</p>
+
+<p style="color: #DC2626;">
+    <strong>Didn't request this?</strong><br>
+    If you didn't initiate this change, ignore this email — your account email will not be updated.
+</p>
+
+<p>
+    Stay secure,<br>
+    <strong>The Eagles & Eaglets Team</strong>
+</p>
+{% endblock %}

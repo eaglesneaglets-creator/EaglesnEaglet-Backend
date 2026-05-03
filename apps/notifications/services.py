@@ -10,7 +10,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.db import transaction
 
-from .models import Notification
+from .models import Notification, NotificationPreference
 
 logger = logging.getLogger(__name__)
 
@@ -19,20 +19,54 @@ class NotificationService:
     """Handles notification creation and management."""
 
     @staticmethod
+    def is_enabled(user, event_type: str, channel: str) -> bool:
+        """
+        Check whether a notification channel is enabled for a user/event.
+
+        channel: 'email' | 'inapp'.
+        ALWAYS_ON events (e.g. 'general' / system) bypass the check.
+        Missing rows fall back to registry DEFAULTS.
+        """
+        from .registry import ALWAYS_ON, DEFAULTS
+
+        if user is None or not getattr(user, "is_authenticated", True):
+            # Guests / anon — no prefs, allow by default (caller decides)
+            return True
+        if event_type in ALWAYS_ON:
+            return True
+
+        pref = NotificationPreference.objects.filter(
+            user=user, event_type=event_type
+        ).first()
+        if pref is None:
+            default_email, default_inapp = DEFAULTS.get(event_type, (True, True))
+            return default_email if channel == "email" else default_inapp
+        return pref.email_enabled if channel == "email" else pref.inapp_enabled
+
+    @staticmethod
     def create_notification(
         recipient,
         notification_type: str,
         title: str,
         message: str,
         action_url: str = "",
-    ) -> Notification:
+    ) -> Notification | None:
         """
         Create an in-app notification for a user.
+
+        Honors per-user NotificationPreference: returns None if the user has
+        opted out of in-app delivery for this event type (no DB row, no WS push).
 
         Registers a post-commit hook to push the notification via WebSocket.
         Using on_commit avoids RuntimeError when this method is called from within
         a Channels consumer or inside a select_for_update() block.
         """
+        if not NotificationService.is_enabled(recipient, notification_type, "inapp"):
+            logger.debug(
+                "in-app suppressed by pref: %s → %s", notification_type, recipient.id
+            )
+            return None
+
         notification = Notification.objects.create(
             recipient=recipient,
             notification_type=notification_type,

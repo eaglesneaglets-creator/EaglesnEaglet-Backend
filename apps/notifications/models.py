@@ -59,3 +59,28 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.notification_type} → {self.recipient}"
+
+
+class NotificationPreference(models.Model):
+    """Per-user, per-event delivery preference (email + in-app channels)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_prefs",
+    )
+    event_type = models.CharField(
+        max_length=30,
+        choices=Notification.NotificationType.choices,
+    )
+    email_enabled = models.BooleanField(default=True)
+    inapp_enabled = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "notification_preference"
+        unique_together = [("user", "event_type")]
+        indexes = [models.Index(fields=["user", "event_type"])]
+
+    def __str__(self):
+        return f"{self.user_id}:{self.event_type} email={self.email_enabled} inapp={self.inapp_enabled}"

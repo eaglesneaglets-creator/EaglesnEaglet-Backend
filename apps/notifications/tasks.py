@@ -55,9 +55,24 @@ def send_email_notification(self, recipient_id: str, subject: str, template_name
         raise
 
 
+def _email_pref_allows(user_id: str, event_type: str) -> bool:
+    """Pref-gate helper for typed email tasks. Lazy import to dodge AppRegistryNotReady."""
+    from apps.users.models import User
+    from .services import NotificationService
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return False
+    return NotificationService.is_enabled(user, event_type, "email")
+
+
 @shared_task
 def send_points_awarded_email(user_id: str, points: int, description: str):
-    """Notify a user that they were awarded points."""
+    """Notify a user that they were awarded points (gated by pref)."""
+    if not _email_pref_allows(user_id, "points_awarded"):
+        logger.debug("points_awarded email suppressed by pref for user %s", user_id)
+        return
     send_email_notification(
         recipient_id=user_id,
         subject="You earned points!",
@@ -68,7 +83,10 @@ def send_points_awarded_email(user_id: str, points: int, description: str):
 
 @shared_task
 def send_order_confirmed_email(user_id: str, order_id: str):
-    """Notify a user that their order was confirmed."""
+    """Notify a user that their order was confirmed (gated by pref)."""
+    if not _email_pref_allows(user_id, "order_confirmed"):
+        logger.debug("order_confirmed email suppressed by pref for user %s", user_id)
+        return
     send_email_notification(
         recipient_id=user_id,
         subject="Your order is confirmed!",

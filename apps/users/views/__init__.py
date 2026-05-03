@@ -1,0 +1,103 @@
+"""apps.users.views package — split from monolithic views.py in Phase 11.5-04."""
+
+from .auth import (
+    RegisterView,
+    LoginView,
+    LogoutView,
+    CustomTokenRefreshView,
+    EmailVerificationView,
+    ResendVerificationView,
+    PasswordResetRequestView,
+    PasswordResetConfirmView,
+    PasswordChangeView,
+    CurrentUserView,
+)
+from .kyc import (
+    MentorKYCView,
+    MentorKYCStepView,
+    MentorKYCSubmitView,
+    UploadGovernmentIDView,
+    UploadRecommendationView,
+)
+from .profile import (
+    EagletProfileView,
+    EagletOnboardingView,
+    EagletSkipOnboardingView,
+    MentorProfileView,
+    MenteeProfileView,
+    ProfileSubmitView,
+    UploadDisplayPictureView,
+    UploadCVView,
+)
+from .oauth import (
+    GoogleOAuthLoginView,
+    GoogleOAuthCallbackView,
+)
+from .admin import (
+    AdminKYCListView,
+    AdminKYCDetailView,
+    AdminKYCStartReviewView,
+    AdminKYCApproveView,
+    AdminKYCRejectView,
+    AdminKYCRequestChangesView,
+    AdminKYCNotesView,
+    AdminDashboardStatsView,
+    AdminUserListView,
+    AdminSuspendUserView,
+    AdminReactivateUserView,
+)
+from .availability import (
+    MentorAvailabilityView,
+    MentorAvailabilityDetailView,
+    PublicMentorAvailabilityView,
+)
+from .account import (
+    EmailChangeRequestView,
+    EmailChangeConfirmView,
+    AccountDeleteView,
+)
+
+__all__ = [
+    "RegisterView",
+    "LoginView",
+    "LogoutView",
+    "CustomTokenRefreshView",
+    "EmailVerificationView",
+    "ResendVerificationView",
+    "PasswordResetRequestView",
+    "PasswordResetConfirmView",
+    "PasswordChangeView",
+    "CurrentUserView",
+    "MentorKYCView",
+    "MentorKYCStepView",
+    "MentorKYCSubmitView",
+    "UploadGovernmentIDView",
+    "UploadRecommendationView",
+    "EagletProfileView",
+    "EagletOnboardingView",
+    "EagletSkipOnboardingView",
+    "MentorProfileView",
+    "MenteeProfileView",
+    "ProfileSubmitView",
+    "UploadDisplayPictureView",
+    "UploadCVView",
+    "GoogleOAuthLoginView",
+    "GoogleOAuthCallbackView",
+    "AdminKYCListView",
+    "AdminKYCDetailView",
+    "AdminKYCStartReviewView",
+    "AdminKYCApproveView",
+    "AdminKYCRejectView",
+    "AdminKYCRequestChangesView",
+    "AdminKYCNotesView",
+    "AdminDashboardStatsView",
+    "AdminUserListView",
+    "AdminSuspendUserView",
+    "AdminReactivateUserView",
+    "MentorAvailabilityView",
+    "MentorAvailabilityDetailView",
+    "PublicMentorAvailabilityView",
+    "EmailChangeRequestView",
+    "EmailChangeConfirmView",
+    "AccountDeleteView",
+]

@@ -762,3 +762,82 @@ class TestEdgeCases:
         response = api_client.get(url)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# =============================================================================
+# REGRESSION: views package import paths (plan 11.5-04 hotfix)
+# =============================================================================
+
+@pytest.mark.django_db
+class TestViewsPackageImports:
+    """
+    After 11.5-04 split users/views.py into views/ package, lazy imports like
+    `from .tasks import X` inside view methods broke (resolved to
+    apps.users.views.tasks instead of apps.users.tasks). This test catches
+    regression by exercising the registration flow that triggers those imports.
+    """
+
+    def test_register_triggers_verification_email_path(self, api_client):
+        from unittest.mock import patch
+        url = reverse('users:register')
+
+        with patch('apps.users.tasks.send_verification_email.delay') as mock_task:
+            response = api_client.post(url, {
+                'email': 'newuser@example.com',
+                'password': 'SecurePass123!',
+                'password_confirm': 'SecurePass123!',
+                'first_name': 'New',
+                'last_name': 'User',
+                'role': 'eaglet',
+                'terms_accepted': True,
+            }, format='json')
+
+            assert response.status_code == status.HTTP_201_CREATED
+            assert response.data['data']['email_sent'] is True, (
+                "email_sent must be True — if False, lazy import in RegisterView "
+                "is broken (likely `from .tasks` instead of `from ..tasks` after "
+                "views package split in plan 11.5-04)."
+            )
+            mock_task.assert_called_once()
+
+    def test_view_submodules_resolve_private_helper_references(self):
+        """
+        Static AST check: every `_name` referenced in apps/users/views/*.py must
+        either be defined locally or imported. Catches the oauth.py → _set_auth_cookies
+        bug class introduced by 11.5-04 split (helper used without import).
+        """
+        import ast
+        import importlib
+
+        submodules = ['auth', 'account', 'admin', 'availability', 'kyc', 'oauth', 'profile']
+        errors = []
+        for name in submodules:
+            mod = importlib.import_module(f'apps.users.views.{name}')
+            source = open(mod.__file__).read()
+            tree = ast.parse(source)
+
+            defined = set()
+            imported = set()
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    defined.add(node.name)
+                elif isinstance(node, ast.ImportFrom):
+                    for alias in node.names:
+                        imported.add(alias.asname or alias.name)
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imported.add((alias.asname or alias.name).split('.')[0])
+
+            referenced = {
+                node.id for node in ast.walk(tree)
+                if isinstance(node, ast.Name)
+                and node.id.startswith('_')
+                and not node.id.startswith('__')
+                and len(node.id) > 1  # exclude `_` (gettext alias)
+            }
+
+            missing = referenced - defined - imported
+            for sym in missing:
+                errors.append(f"{name}.py references `{sym}` but does not define or import it")
+
+        assert not errors, "Missing private symbol imports:\n" + "\n".join(errors)

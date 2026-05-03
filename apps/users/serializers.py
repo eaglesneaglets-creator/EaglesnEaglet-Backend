@@ -18,7 +18,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User, UserProfile, MentorKYC, EagletProfile, MenteeKYC, LoginHistory, MentorAvailability
+from .models import User, UserProfile, MentorKYC, EagletProfile, MenteeKYC, LoginHistory, MentorAvailability, EmailChangeRequest
 from .constants import (
     EXPERTISE_CHOICES, MENTORSHIP_INTEREST_CHOICES,
     EDUCATIONAL_LEVEL_CHOICES, MENTORSHIP_GOAL_CHOICES, AGE_GROUP_CHOICES,
@@ -141,6 +141,7 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'email', 'first_name', 'last_name', 'full_name',
             'phone_number', 'role', 'status', 'avatar', 'bio',
             'is_email_verified', 'is_phone_verified', 'date_of_birth',
+            'profile_visibility',
             'is_staff', 'is_superuser', 'kyc_status',
             'created_at', 'last_login',
         ]
@@ -1242,3 +1243,37 @@ class MentorAvailabilitySerializer(serializers.ModelSerializer):
             if attrs['start_time'] >= attrs['end_time']:
                 raise serializers.ValidationError('start_time must be before end_time.')
         return attrs
+
+
+# =============================================================================
+# Account Settings Serializers (Phase 11-02)
+# =============================================================================
+
+class EmailChangeRequestSerializer(serializers.Serializer):
+    new_email = serializers.EmailField()
+    current_password = serializers.CharField(write_only=True)
+
+    def validate_current_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError('Current password is incorrect.')
+        return value
+
+    def validate_new_email(self, value):
+        user = self.context['request'].user
+        normalized = value.lower().strip()
+        if normalized == user.email.lower():
+            raise serializers.ValidationError('New email must differ from your current email.')
+        if User.objects.filter(email__iexact=normalized).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError('That email is already in use.')
+        return normalized
+
+
+class AccountDeleteSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+
+    def validate_current_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError('Current password is incorrect.')
+        return value
