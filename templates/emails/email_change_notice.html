@@ -1,0 +1,32 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Email Change Requested - Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2>Email Change Requested on Your Account</h2>
+
+<p>Hi {{ user.first_name }},</p>
+
+<p>
+    Someone requested to change the email address on your Eagles & Eaglets account to <strong>{{ new_email }}</strong>.
+</p>
+
+<p>
+    Your account email will only be updated after the new address is verified by clicking the confirmation link sent to it.
+</p>
+
+<div class="info-box">
+    <p><strong>Was this you?</strong> No action needed — finish the change from the new address.</p>
+</div>
+
+<p style="color: #DC2626;">
+    <strong>Wasn't you?</strong><br>
+    Your account may be at risk. Sign in immediately, change your password, and contact support at
+    <a href="mailto:{{ support_email }}">{{ support_email }}</a>.
+</p>
+
+<p>
+    Stay secure,<br>
+    <strong>The Eagles & Eaglets Team</strong>
+</p>
+{% endblock %}

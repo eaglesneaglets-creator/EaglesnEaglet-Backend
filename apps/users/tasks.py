@@ -404,3 +404,89 @@ def backup_database():
         )
     except Exception as exc:
         logger.error("backup_database: unexpected error — %s", exc)
+
+
+# =============================================================================
+# Email Change (Phase 11-02)
+# =============================================================================
+
+EMAIL_CHANGE_EXPIRY_HOURS = 24
+
+
+def _send_raw_templated_email(template, subject_key, recipient, context):
+    """Render + send a templated email to an arbitrary recipient (not bound to user.email).
+
+    Used by email-change flow where the confirmation goes to NEW address and the
+    notice goes to OLD address — neither matches user.email at send time.
+    """
+    html_message = render_to_string(template, context)
+    plain_message = strip_tags(html_message)
+    subject = EMAIL_SUBJECTS[subject_key]
+
+    send_mail(
+        subject=subject,
+        message=plain_message,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[recipient],
+        html_message=html_message,
+        fail_silently=False,
+    )
+
+
+@shared_task(bind=True, max_retries=3, soft_time_limit=30, time_limit=60)
+def send_email_change_confirm(self, user_id, new_email, raw_token):
+    """Send confirmation link to the NEW email address."""
+    try:
+        from .models import User
+        user = User.objects.get(id=user_id)
+        confirm_url = f"{_frontend_url()}/auth/email-change/confirm/{raw_token}"
+        _send_raw_templated_email(
+            template='emails/email_change_confirm.html',
+            subject_key='email_change_confirm',
+            recipient=new_email,
+            context={
+                'user': user,
+                'new_email': new_email,
+                'confirm_url': confirm_url,
+                'expiry_hours': EMAIL_CHANGE_EXPIRY_HOURS,
+                'support_email': _support_email(),
+            },
+        )
+        logger.info("Email change confirm sent to %s for user %s", new_email, user_id)
+    except SoftTimeLimitExceeded:
+        logger.error("Email change confirm task timed out for user %s", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("Email change confirm skipped — user %s no longer exists", user_id)
+        return
+    except Exception as exc:
+        logger.error("Failed to send email change confirm to %s: %s", new_email, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
+
+
+@shared_task(bind=True, max_retries=3, soft_time_limit=30, time_limit=60)
+def send_email_change_notice(self, user_id, new_email):
+    """Send security notice to the OLD email address."""
+    try:
+        from .models import User
+        user = User.objects.get(id=user_id)
+        _send_raw_templated_email(
+            template='emails/email_change_notice.html',
+            subject_key='email_change_notice',
+            recipient=user.email,
+            context={
+                'user': user,
+                'new_email': new_email,
+                'support_email': _support_email(),
+            },
+        )
+        logger.info("Email change notice sent to %s for user %s", user.email, user_id)
+    except SoftTimeLimitExceeded:
+        logger.error("Email change notice task timed out for user %s", user_id)
+        return
+    except User.DoesNotExist:
+        logger.warning("Email change notice skipped — user %s no longer exists", user_id)
+        return
+    except Exception as exc:
+        logger.error("Failed to send email change notice to user %s: %s", user_id, exc)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))

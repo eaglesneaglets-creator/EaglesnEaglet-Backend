@@ -78,6 +78,11 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
         SUSPENDED = 'suspended', 'Suspended'
         PENDING_VERIFICATION = 'pending', 'Pending Verification'
 
+    class Visibility(models.TextChoices):
+        PUBLIC = 'public', 'Public'
+        NEST_ONLY = 'nest_only', 'Nest Only'
+        PRIVATE = 'private', 'Private'
+
     # Primary identifier
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -135,6 +140,13 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
     # Bio and additional info
     bio = models.TextField(max_length=500, blank=True)
     date_of_birth = models.DateField(null=True, blank=True)
+
+    # Privacy
+    profile_visibility = models.CharField(
+        max_length=10,
+        choices=Visibility.choices,
+        default=Visibility.PUBLIC,
+    )
 
     # Django admin fields
     is_staff = models.BooleanField(default=False)
@@ -1198,3 +1210,35 @@ class MentorAvailability(TimestampMixin, models.Model):
     def __str__(self) -> str:
         day = self.DayOfWeek(self.day_of_week).label
         return f"{self.mentor} — {day} {self.start_time:%H:%M}–{self.end_time:%H:%M}"
+
+
+class EmailChangeRequest(TimestampMixin):
+    """Pending email change. Token sent to NEW address; email field updates only on confirm."""
+
+    user = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='email_change_requests',
+    )
+    new_email = models.EmailField()
+    token_hash = models.CharField(max_length=64, unique=True, db_index=True)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'email_change_request'
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['user', 'consumed_at'])]
+        verbose_name = 'Email Change Request'
+        verbose_name_plural = 'Email Change Requests'
+
+    @property
+    def is_valid(self) -> bool:
+        return self.consumed_at is None and self.expires_at > timezone.now()
+
+    @staticmethod
+    def hash_token(plaintext: str) -> str:
+        return hashlib.sha256(plaintext.encode('utf-8')).hexdigest()
+
+    def __str__(self) -> str:
+        return f"EmailChangeRequest(user={self.user_id}, new={self.new_email}, valid={self.is_valid})"

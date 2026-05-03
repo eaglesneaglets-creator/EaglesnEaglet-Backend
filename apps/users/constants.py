@@ -163,4 +163,6 @@ EMAIL_SUBJECTS = {
     'mentee_approved': 'Welcome! Your Eaglet Profile is Approved',
     'profile_rejected': 'Update Required: Your Profile Application',
     'profile_changes_requested': 'Action Required: Please Update Your Profile',
+    'email_change_confirm': 'Confirm your new Eagles & Eaglets email',
+    'email_change_notice': 'Email change requested on your account',
 }
