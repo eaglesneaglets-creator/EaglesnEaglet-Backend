@@ -228,3 +228,16 @@ CLOUDINARY_FOLDERS = {
     'store_images': 'eaglesneaglets/images/store',
     'misc': 'eaglesneaglets/misc',
 }
+
+# E2E / dev: relax login throttle from 5/min to 100/min so headed Playwright
+# suite (13 logins) doesn't trip the rate limit.
+REST_FRAMEWORK.setdefault('DEFAULT_THROTTLE_RATES', {})
+REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'].update({
+    'login': '100/minute',
+    'register': '50/minute',
+    'burst': '600/minute',
+})
+
+# E2E / dev: raise RateLimitByIPMiddleware ceiling on sensitive endpoints
+# (login/register/password-reset/verify) so headed Playwright suites don't 403.
+SENSITIVE_RATE_LIMIT_PER_MIN = 200

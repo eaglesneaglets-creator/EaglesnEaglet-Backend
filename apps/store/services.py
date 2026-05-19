@@ -338,62 +338,6 @@ class StoreService:
         return order
 
     @staticmethod
-    @transaction.atomic
-    def create_guest_order(guest_email: str, guest_name: str, items_data: list, shipping_address: dict = None) -> Order:
-        """
-        Create an order for a guest (no user account required).
-        items_data: list of {product_id, quantity}
-        """
-        if not items_data:
-            raise ValidationError({"cart": "Your cart is empty."})
-
-        product_ids = [item["product_id"] for item in items_data]
-        products_map = {
-            str(p.id): p
-            for p in Product.objects.select_for_update().filter(
-                pk__in=product_ids, status=Product.Status.PUBLISHED
-            )
-        }
-
-        # Validate all products exist and have stock
-        for item in items_data:
-            product = products_map.get(str(item["product_id"]))
-            if not product:
-                raise ValidationError({"cart": f"Product not found or unavailable."})
-            if product.stock_quantity < item["quantity"]:
-                raise ValidationError(
-                    {"cart": f"'{product.name}' only has {product.stock_quantity} in stock."}
-                )
-
-        total = sum(
-            products_map[str(item["product_id"])].price * item["quantity"]
-            for item in items_data
-        )
-
-        order = Order.objects.create(
-            user=None,
-            guest_email=guest_email,
-            guest_name=guest_name,
-            status=Order.Status.PENDING,
-            total_amount=total,
-            shipping_address=shipping_address or {},
-        )
-
-        for item in items_data:
-            product = products_map[str(item["product_id"])]
-            OrderItem.objects.create(
-                order=order,
-                product=product,
-                quantity=item["quantity"],
-                unit_price=product.price,
-            )
-            product.stock_quantity -= item["quantity"]
-            product.save(update_fields=["stock_quantity"])
-
-        logger.info("Guest order created: %s for %s — total %s", order.id, guest_email, total)
-        return order
-
-    @staticmethod
     def get_user_orders(user):
         return Order.objects.filter(user=user).prefetch_related(
             "items", "items__product"

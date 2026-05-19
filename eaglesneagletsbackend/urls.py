@@ -9,6 +9,8 @@ from django.http import JsonResponse
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+from core.views import enums_view
+
 
 def health_check(request):
     """
@@ -48,15 +50,25 @@ def health_check(request):
 
 
 # API URL patterns
+from apps.nests.enrollment_urls import (
+    enrollment_urlpatterns,
+    exit_request_urlpatterns,
+)
+
 api_v1_patterns = [
     # Health check
     path('health/', health_check, name='health-check'),
+
+    # Enum registry (phase 17-01) — single source of truth for FE status enums + UI groupings
+    path('enums/', enums_view, name='enums'),
 
     # Authentication
     path('auth/', include('apps.users.urls')),
 
     # Core app URLs
     path('nests/', include('apps.nests.urls')),
+    path('program-enrollments/', include(enrollment_urlpatterns)),
+    path('program-exit-requests/', include(exit_request_urlpatterns)),
     path('content/', include('apps.content.urls')),
     path('points/', include('apps.points.urls')),
     path('chat/', include('apps.chat.urls')),
@@ -64,6 +76,9 @@ api_v1_patterns = [
     path('donations/', include('apps.donations.urls')),
     path('notifications/', include('apps.notifications.urls')),
     path('analytics/', include('apps.analytics.urls')),
+
+    # Admin-only API surfaces (platform admin role; not Django /admin/)
+    path('admin/', include('apps.nests.admin_urls')),
 ]
 
 urlpatterns = [

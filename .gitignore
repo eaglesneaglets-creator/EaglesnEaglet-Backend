@@ -36,12 +36,15 @@ ENV/
 .env
 .env.local
 .env.production
+.env.*
+!.env.example
 *.local
 
 # =============================================================================
 # Django
 # =============================================================================
 *.log
+logs/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -77,6 +80,10 @@ htmlcov/
 coverage.xml
 *.cover
 .hypothesis/
+test_output.txt
+test_output_*.txt
+results_*.csv
+locust_results*.csv
 
 # =============================================================================
 # Type Checking
@@ -96,6 +103,7 @@ dmypy.json
 ehthumbs.db
 Thumbs.db
 nul
+desktop.ini
 
 # =============================================================================
 # Celery
@@ -115,9 +123,3 @@ celerybeat.pid
 *.tmp
 *.temp
 .cache/
-
-# =============================================================================
-# Test Outputs & Local Artifacts
-# =============================================================================
-results_*.csv
-test_output.txt

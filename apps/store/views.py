@@ -34,7 +34,6 @@ from .serializers import (
     OrderListSerializer,
     OrderDetailSerializer,
     CreateOrderSerializer,
-    GuestCheckoutSerializer,
     AdminOrderListSerializer,
     AdminOrderDetailSerializer,
     AdminOrderStatusUpdateSerializer,
@@ -251,49 +250,6 @@ class OrderViewSet(ViewSet):
         return success(OrderDetailSerializer(order).data)
 
 
-class GuestCheckoutView(APIView):
-    """
-    POST /store/guest-checkout/
-    Create an order for a guest without requiring authentication.
-    Accepts: guest_email, guest_name, items [{product_id, quantity}], shipping_address
-    """
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = GuestCheckoutSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        d = serializer.validated_data
-        order = StoreService.create_guest_order(
-            guest_email=d["guest_email"],
-            guest_name=d["guest_name"],
-            items_data=[
-                {"product_id": str(item["product_id"]), "quantity": item["quantity"]}
-                for item in d["items"]
-            ],
-            shipping_address=d.get("shipping_address", {}),
-        )
-        return success(OrderDetailSerializer(order).data, status.HTTP_201_CREATED)
-
-
-class GuestOrderDetailView(APIView):
-    """
-    GET /store/guest-orders/<pk>/
-    Public order detail lookup for guest orders — no authentication required.
-    Only returns orders that have no user (guest orders).
-    """
-    permission_classes = [AllowAny]
-
-    def get(self, request, pk=None):
-        from rest_framework.exceptions import NotFound
-        try:
-            order = Order.objects.prefetch_related(
-                "items", "items__product", "items__product__images"
-            ).get(pk=pk, user__isnull=True)
-        except Order.DoesNotExist:
-            raise NotFound("Order not found.")
-        return success(OrderDetailSerializer(order).data)
-
-
 class AdminOrderViewSet(ViewSet):
     """
     GET   /store/admin/orders/                     — paginated list (admin only)
@@ -440,35 +396,17 @@ class InitializePaymentView(APIView):
     POST /store/orders/<id>/initialize-payment/
 
     Initializes a Paystack transaction for the given order.
-    Works for both authenticated users AND guests (AllowAny).
+    Order must belong to request.user.
 
-    For authenticated users: order must belong to request.user.
-    For guests: order must be a guest order (user=None) with matching ID.
-
-    Sets order.paystack_reference = str(order.id) (idempotency key) and
-    transitions status to PAYMENT_PENDING before calling Paystack.
+    Sets a fresh order.paystack_reference and transitions status to
+    PAYMENT_PENDING before calling Paystack.
 
     Returns: { success: true, data: { authorization_url, reference } }
     """
-    permission_classes = [AllowAny]
-    # No authentication_classes override — use project default (CookieJWTAuthentication).
-    # authenticate() returns None for requests with no token, so guests get AnonymousUser
-    # automatically without raising an error.
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, pk=None):
-        from rest_framework.exceptions import NotFound as DRFNotFound
-
-        # Fetch order — authenticated users get ownership check, guests get guest order
-        try:
-            if request.user and request.user.is_authenticated:
-                order = StoreService.get_order_detail(request.user, pk)
-            else:
-                # Guest: only allow access to guest orders (user=None)
-                order = Order.objects.prefetch_related(
-                    "items", "items__product"
-                ).get(pk=pk, user__isnull=True)
-        except Order.DoesNotExist:
-            raise DRFNotFound("Order not found.")
+        order = StoreService.get_order_detail(request.user, pk)
 
         if order.status not in (Order.Status.PENDING, Order.Status.PAYMENT_PENDING):
             return Response(
@@ -476,17 +414,13 @@ class InitializePaymentView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Generate a fresh reference for each attempt — Paystack does not allow
-        # reuse of a reference even for retries on abandoned/failed transactions.
-        # Use order UUID + timestamp suffix to keep it unique and traceable.
+        # Fresh reference per attempt — Paystack does not allow reuse even on retry.
         import time
         order.paystack_reference = f"{order.id}-{int(time.time())}"
         order.status = Order.Status.PAYMENT_PENDING
         order.save(update_fields=["paystack_reference", "status"])
 
-        # Pass user=None for guest orders — PaystackService uses order.guest_email
-        user = request.user if (request.user and request.user.is_authenticated) else None
-        data = PaystackService.initialize_payment(order, user)
+        data = PaystackService.initialize_payment(order, request.user)
         return success(data)
 
 
@@ -496,30 +430,13 @@ class VerifyPaymentView(APIView):
 
     Manually verifies an order's payment status against Paystack.
     Called by the frontend when polling after redirect (?verify=1).
-    Works for both authenticated and guest orders (AllowAny).
 
     Returns: updated OrderDetailSerializer data
     """
-    permission_classes = [AllowAny]
-    # No authentication_classes override — CookieJWTAuthentication returns None (not raises)
-    # for requests with no token, so guests get AnonymousUser automatically.
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, pk=None):
-        from rest_framework.exceptions import NotFound as DRFNotFound
-
-        # Support both authenticated user orders and guest orders
-        try:
-            if request.user and request.user.is_authenticated:
-                order = StoreService.get_order_detail(request.user, pk)
-            else:
-                # Guest: only allow access to guest orders (user=None) to prevent IDOR.
-                # An unauthenticated caller must not be able to trigger verification
-                # or read details for orders belonging to registered users.
-                order = Order.objects.prefetch_related(
-                    "items", "items__product", "items__product__images"
-                ).get(pk=pk, user__isnull=True)
-        except Order.DoesNotExist:
-            raise DRFNotFound("Order not found.")
+        order = StoreService.get_order_detail(request.user, pk)
 
         if not order.paystack_reference:
             return Response(
@@ -534,7 +451,6 @@ class VerifyPaymentView(APIView):
             txn_id = str(result.get("id", "")) if isinstance(result, dict) else str(getattr(result, "id", ""))
             order = StoreService.mark_order_paid(order.paystack_reference, txn_id)
 
-        # Reload with relations for serializer
         order = Order.objects.prefetch_related(
             "items", "items__product", "items__product__images"
         ).get(pk=order.pk)
@@ -589,3 +505,32 @@ class PaystackWebhookView(APIView):
         # Always return 200 to Paystack — including for unhandled event types.
         # A non-200 response causes Paystack to retry the webhook indefinitely.
         return Response({"status": "ok"}, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------------
+# TEMP STUBS — guest checkout being removed in a separate plan.
+# These exist solely so apps/store/urls.py can import them. Returns 410 Gone
+# so any client hitting the route gets a clear "feature removed" signal
+# rather than a silent 404 or a misleading 501.
+# Remove these classes AND the matching urls.py entries together.
+# ---------------------------------------------------------------------------
+
+
+class GuestCheckoutView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Guest checkout has been removed."},
+            status=status.HTTP_410_GONE,
+        )
+
+
+class GuestOrderDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Guest checkout has been removed."},
+            status=status.HTTP_410_GONE,
+        )

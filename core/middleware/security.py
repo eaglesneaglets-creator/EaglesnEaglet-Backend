@@ -103,8 +103,12 @@ class RateLimitByIPMiddleware:
             # Get current request count
             request_count = cache.get(cache_key, 0)
 
-            # Limit: 10 requests per minute for sensitive endpoints
-            if request_count >= 10:
+            # Limit: 10 requests per minute for sensitive endpoints by default.
+            # Override via settings.SENSITIVE_RATE_LIMIT_PER_MIN (e.g. 200 in local.py
+            # so headed Playwright suites don't trip the limit on dev machines).
+            from django.conf import settings as _s
+            limit = int(getattr(_s, 'SENSITIVE_RATE_LIMIT_PER_MIN', 10))
+            if request_count >= limit:
                 logger.warning(
                     f'Rate limit exceeded for IP {ip} on {path}',
                     extra={'ip': ip, 'path': path, 'count': request_count}

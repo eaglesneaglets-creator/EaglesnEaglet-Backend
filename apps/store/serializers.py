@@ -174,18 +174,6 @@ class CreateOrderSerializer(serializers.Serializer):
     shipping_address = serializers.DictField(required=False, default=dict)
 
 
-class GuestCartItemSerializer(serializers.Serializer):
-    product_id = serializers.UUIDField()
-    quantity = serializers.IntegerField(min_value=1)
-
-
-class GuestCheckoutSerializer(serializers.Serializer):
-    guest_email = serializers.EmailField()
-    guest_name = serializers.CharField(max_length=200)
-    items = GuestCartItemSerializer(many=True)
-    shipping_address = serializers.DictField(required=False, default=dict)
-
-
 # ─── Admin Order Serializers ──────────────────────────────────────────────────
 
 class OrderStatusHistorySerializer(serializers.ModelSerializer):

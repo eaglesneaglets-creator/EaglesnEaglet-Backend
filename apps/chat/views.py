@@ -12,6 +12,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSet
 
+from apps.nests.permissions import HasActiveProgram
+
 from .serializers import ConversationSerializer, MessageSerializer
 from .services import ChatService
 
@@ -23,7 +25,7 @@ class ConversationViewSet(ViewSet):
     GET  /chat/conversations/{id}/messages/  → message history
     POST /chat/conversations/{id}/read/      → mark all as read
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasActiveProgram]
 
     def list(self, request):
         conversations = ChatService.get_user_conversations(request.user)
@@ -90,7 +92,7 @@ class ConversationViewSet(ViewSet):
 
 class NestConversationView(APIView):
     """GET /chat/nest/{nest_id}/conversation/ — get or create nest group chat."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasActiveProgram]
 
     def get(self, request, nest_id):
         try:

@@ -8,7 +8,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     CategoryViewSet, ProductViewSet, ProductImageUploadView,
     ProductBySlugView,
-    CartView, CartItemView, OrderViewSet, GuestCheckoutView, GuestOrderDetailView,
+    CartView, CartItemView, OrderViewSet,
     AdminOrderViewSet,
     InitializePaymentView, VerifyPaymentView, PaystackWebhookView,
 )
@@ -28,8 +28,6 @@ urlpatterns = [
     path("cart/items/", CartItemView.as_view(), name="cart-items"),
     path("cart/items/<uuid:pk>/", CartItemView.as_view(), name="cart-item-detail"),
     path("orders/<uuid:pk>/cancel/", OrderViewSet.as_view({"post": "cancel"}), name="order-cancel"),
-    path("guest-checkout/", GuestCheckoutView.as_view(), name="guest-checkout"),
-    path("guest-orders/<uuid:pk>/", GuestOrderDetailView.as_view(), name="guest-order-detail"),
     path("admin/orders/<uuid:pk>/update-status/", AdminOrderViewSet.as_view({"patch": "update_status"}), name="admin-order-update-status"),
     # MM-20: Payment Gateway
     path("orders/<uuid:pk>/initialize-payment/", InitializePaymentView.as_view(), name="order-initialize-payment"),

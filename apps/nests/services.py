@@ -28,6 +28,11 @@ from .models import (
     NestResource,
     NestEvent,
 )
+from .models_program import (
+    Program,
+    ProgramEnrollment,
+    ProgramExitRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -439,3 +444,370 @@ class CommunityService:
             )
 
         return attendance
+
+
+# ---------------------------------------------------------------------------
+# Program Enrollment lifecycle (plan 14-02)
+# ---------------------------------------------------------------------------
+
+
+class EnrollmentError(Exception):
+    """Base for enrollment lifecycle errors. Carries error_code for FE handling."""
+    error_code = "enrollment_error"
+
+    def __init__(self, message: str, error_code: Optional[str] = None):
+        super().__init__(message)
+        self.message = message
+        if error_code:
+            self.error_code = error_code
+
+
+class AlreadyEnrolled(EnrollmentError):
+    error_code = "already_enrolled"
+
+
+class NoActiveProgram(EnrollmentError):
+    error_code = "no_active_program"
+
+
+class InvalidTransition(EnrollmentError):
+    error_code = "invalid_transition"
+
+
+def _snapshot_program_rules(program: Program) -> dict:
+    """Capture objective + rule definitions at approval time so later edits to
+    the program don't move the finish line for existing enrollees."""
+    objectives = []
+    for objective in program.objectives.prefetch_related("rules").all():
+        objectives.append({
+            "id": str(objective.id),
+            "title": objective.title,
+            "order": objective.order,
+            "rules": [
+                {
+                    "id": str(r.id),
+                    "rule_type": r.rule_type,
+                    "target": r.target,
+                    "config": r.config,
+                }
+                for r in objective.rules.all()
+            ],
+        })
+    return {
+        "program_id": str(program.id),
+        "snapshotted_at": timezone.now().isoformat(),
+        "objectives": objectives,
+    }
+
+
+class EnrollmentService:
+    """Single source of truth for ProgramEnrollment lifecycle transitions."""
+
+    # ------------------------- Apply -------------------------
+
+    @staticmethod
+    @transaction.atomic
+    def apply(*, mentee, nest, message: str = "") -> ProgramEnrollment:
+        if mentee.role != "eaglet":
+            raise PermissionDenied("Only Eaglets can apply to programs.")
+
+        program = Program.objects.filter(
+            nest=nest, status=Program.Status.ACTIVE
+        ).first()
+        if program is None:
+            raise NoActiveProgram(
+                "This Nest has no active program to apply to."
+            )
+
+        # v1 invariants — service-layer pre-check (Postgres partial unique
+        # is the floor; this gives clean error messages cross-DB).
+        if ProgramEnrollment.objects.filter(
+            mentee=mentee, status=ProgramEnrollment.Status.PENDING
+        ).exists():
+            raise AlreadyEnrolled(
+                "You already have a pending program application."
+            )
+        if ProgramEnrollment.objects.filter(
+            mentee=mentee, status=ProgramEnrollment.Status.ACTIVE
+        ).exists():
+            raise AlreadyEnrolled(
+                "You already have an active program enrollment."
+            )
+
+        enrollment = ProgramEnrollment.objects.create(
+            program=program,
+            mentee=mentee,
+            application_message=message,
+        )
+        logger.info(
+            "Program application: %s → %s (program=%s)",
+            mentee.email, nest.name, program.id,
+        )
+        return enrollment
+
+    # ------------------------- Approve -------------------------
+
+    @staticmethod
+    @transaction.atomic
+    def approve(*, enrollment_id: str, reviewer) -> ProgramEnrollment:
+        enrollment = (
+            ProgramEnrollment.objects
+            .select_for_update()
+            .select_related("program__nest")
+            .get(pk=enrollment_id)
+        )
+        if enrollment.status != ProgramEnrollment.Status.PENDING:
+            raise InvalidTransition(
+                f"Cannot approve enrollment in status '{enrollment.status}'."
+            )
+
+        # Race guard — mentee may already have active enrollment elsewhere
+        if ProgramEnrollment.objects.filter(
+            mentee=enrollment.mentee,
+            status=ProgramEnrollment.Status.ACTIVE,
+        ).exists():
+            raise AlreadyEnrolled(
+                "Mentee already has an active enrollment."
+            )
+
+        enrollment.status = ProgramEnrollment.Status.ACTIVE
+        enrollment.started_at = timezone.now()
+        enrollment.reviewed_by = reviewer
+        enrollment.rules_snapshot = _snapshot_program_rules(enrollment.program)
+        enrollment.save(update_fields=[
+            "status", "started_at", "reviewed_by", "rules_snapshot", "updated_at",
+        ])
+        logger.info(
+            "Enrollment approved: %s (mentee=%s)",
+            enrollment.id, enrollment.mentee_id,
+        )
+        return enrollment
+
+    # ------------------------- Reject -------------------------
+
+    @staticmethod
+    @transaction.atomic
+    def reject(*, enrollment_id: str, reviewer, reason: str = "") -> ProgramEnrollment:
+        enrollment = ProgramEnrollment.objects.select_for_update().get(pk=enrollment_id)
+        if enrollment.status != ProgramEnrollment.Status.PENDING:
+            raise InvalidTransition(
+                f"Cannot reject enrollment in status '{enrollment.status}'."
+            )
+        enrollment.status = ProgramEnrollment.Status.REJECTED
+        enrollment.ended_at = timezone.now()
+        enrollment.reviewed_by = reviewer
+        enrollment.ended_by = reviewer
+        enrollment.exit_reason = reason
+        enrollment.save(update_fields=[
+            "status", "ended_at", "reviewed_by", "ended_by", "exit_reason", "updated_at",
+        ])
+        return enrollment
+
+    # ------------------------- Release -------------------------
+
+    @staticmethod
+    @transaction.atomic
+    def release(*, enrollment_id: str, actor, reason: str = "") -> ProgramEnrollment:
+        enrollment = ProgramEnrollment.objects.select_for_update().get(pk=enrollment_id)
+        if enrollment.status != ProgramEnrollment.Status.ACTIVE:
+            raise InvalidTransition(
+                f"Cannot release enrollment in status '{enrollment.status}'."
+            )
+        enrollment.status = ProgramEnrollment.Status.RELEASED
+        enrollment.ended_at = timezone.now()
+        enrollment.ended_by = actor
+        enrollment.exit_reason = reason
+        enrollment.save(update_fields=[
+            "status", "ended_at", "ended_by", "exit_reason", "updated_at",
+        ])
+        return enrollment
+
+    # ------------------------- Complete -------------------------
+
+    @staticmethod
+    @transaction.atomic
+    def complete(*, enrollment_id: str, actor, force: bool = False) -> ProgramEnrollment:
+        """Mark active enrollment complete.
+
+        Validates that all objective rules in the enrollment's locked
+        rules_snapshot are met. `force=True` (staff only — caller enforces)
+        bypasses the check for emergency completion and emits an audit log.
+        """
+        enrollment = ProgramEnrollment.objects.select_for_update().get(pk=enrollment_id)
+        if enrollment.status != ProgramEnrollment.Status.ACTIVE:
+            raise InvalidTransition(
+                f"Cannot complete enrollment in status '{enrollment.status}'."
+            )
+
+        if not force:
+            from apps.nests.evaluators import evaluate_enrollment
+
+            progress = evaluate_enrollment(enrollment)
+            if not progress["all_met"]:
+                raise InvalidTransition(
+                    "Cannot complete: not all objectives met.",
+                    error_code="objectives_incomplete",
+                )
+
+        enrollment.status = ProgramEnrollment.Status.COMPLETED
+        enrollment.ended_at = timezone.now()
+        enrollment.ended_by = actor
+        enrollment.save(update_fields=[
+            "status", "ended_at", "ended_by", "updated_at",
+        ])
+        if force:
+            logger.warning(
+                "Enrollment force-completed: enrollment=%s actor=%s",
+                enrollment.id, getattr(actor, "id", None),
+            )
+        return enrollment
+
+    # ------------------------- Opt-out request -------------------------
+
+    @staticmethod
+    @transaction.atomic
+    def request_opt_out(*, enrollment_id: str, mentee, reason: str) -> ProgramExitRequest:
+        enrollment = ProgramEnrollment.objects.select_for_update().get(pk=enrollment_id)
+        if enrollment.mentee_id != mentee.id:
+            raise PermissionDenied("Only the enrolled mentee can request opt-out.")
+        if enrollment.status != ProgramEnrollment.Status.ACTIVE:
+            raise InvalidTransition(
+                "Only active enrollments can request opt-out."
+            )
+        if not reason or not reason.strip():
+            raise ValidationError({"reason": "A reason is required."})
+        if ProgramExitRequest.objects.filter(
+            enrollment=enrollment, status=ProgramExitRequest.Status.PENDING
+        ).exists():
+            raise ValidationError({
+                "exit_request": "You already have a pending opt-out request."
+            })
+        exit_req = ProgramExitRequest.objects.create(
+            enrollment=enrollment,
+            requested_by=mentee,
+            reason=reason,
+        )
+        return exit_req
+
+    # ------------------------- Decide opt-out -------------------------
+
+    @staticmethod
+    @transaction.atomic
+    def decide_opt_out(
+        *, exit_request_id: str, decider, approve: bool, note: str = ""
+    ) -> ProgramExitRequest:
+        exit_req = (
+            ProgramExitRequest.objects
+            .select_for_update()
+            .select_related("enrollment")
+            .get(pk=exit_request_id)
+        )
+        if exit_req.status != ProgramExitRequest.Status.PENDING:
+            raise InvalidTransition(
+                "Exit request already decided."
+            )
+        exit_req.status = (
+            ProgramExitRequest.Status.APPROVED if approve
+            else ProgramExitRequest.Status.DENIED
+        )
+        exit_req.decided_by = decider
+        exit_req.decided_at = timezone.now()
+        exit_req.decision_note = note
+        exit_req.save(update_fields=[
+            "status", "decided_by", "decided_at", "decision_note", "updated_at",
+        ])
+        if approve:
+            enrollment = exit_req.enrollment
+            enrollment.status = ProgramEnrollment.Status.OPTED_OUT
+            enrollment.ended_at = timezone.now()
+            enrollment.ended_by = decider
+            enrollment.exit_reason = exit_req.reason
+            enrollment.save(update_fields=[
+                "status", "ended_at", "ended_by", "exit_reason", "updated_at",
+            ])
+        return exit_req
+
+    # ------------------------- access_status -------------------------
+
+    @staticmethod
+    def access_status_for(user) -> dict:
+        """Build the FE access_status payload for a mentee."""
+        from .levels import compute_level
+        level = compute_level(user)
+        active = (
+            ProgramEnrollment.objects
+            .filter(mentee=user, status=ProgramEnrollment.Status.ACTIVE)
+            .select_related("program__nest")
+            .first()
+        )
+        pending = (
+            ProgramEnrollment.objects
+            .filter(mentee=user, status=ProgramEnrollment.Status.PENDING)
+            .select_related("program__nest")
+            .first()
+        )
+        return {
+            "has_active_program": bool(active),
+            "active_program": (
+                {
+                    "enrollment_id": str(active.id),
+                    "program_id": str(active.program_id),
+                    "program_name": active.program.name,
+                    # FE convenience aliases (MyProgramTab reads these directly).
+                    "name": active.program.name,
+                    "description": active.program.description,
+                    "status": active.status,
+                    "nest_id": str(active.program.nest_id),
+                    "nest_name": active.program.nest.name,
+                    "started_at": active.started_at,
+                    # Snapshot taken at approval — single source of truth for
+                    # required objective/rule counts regardless of later edits.
+                    "objectives_count": len((active.rules_snapshot or {}).get("objectives", [])),
+                    "objectives_completed": 0,  # TODO wire real evaluator in next plan
+                } if active else None
+            ),
+            "pending_program_request": (
+                {
+                    "enrollment_id": str(pending.id),
+                    "program_name": pending.program.name,
+                    "nest_name": pending.program.nest.name,
+                    "requested_at": pending.requested_at,
+                } if pending else None
+            ),
+            "locked_features": [] if active else ["assignments", "messages", "resources", "leaderboard"],
+            "mentee_level": level,
+            "mentor_eligibility": level["mentor_eligible"],
+        }
+
+
+# ---------------------------------------------------------------------------
+# Program discovery helpers (plan 14.5-01)
+# ---------------------------------------------------------------------------
+
+_RULE_SUMMARY_TEMPLATES = {
+    "modules_completed": "Complete {n} module{s}",
+    "assignments_passed": "Pass {n} assignment{s}",
+    "points_earned": "Earn {n} point{s}",
+    "posts_count": "Post {n} time{s}",
+    "streak_days": "Maintain a {n}-day streak",
+}
+
+
+def build_rule_summary_string(rule) -> str:
+    """Render one ProgramObjectiveRule as a human-readable phrase."""
+    template = _RULE_SUMMARY_TEMPLATES.get(rule.rule_type)
+    if template is None:
+        return f"{rule.rule_type}: {rule.target}"
+    return template.format(n=rule.target, s="" if rule.target == 1 else "s")
+
+
+def build_objective_rule_summary(objective) -> str:
+    """Join all rules of an objective into one ' · ' separated summary string.
+
+    Used by mentee discovery surface so prospective mentees see what completing
+    the objective requires before they apply to the program.
+    """
+    rules = list(objective.rules.all())
+    if not rules:
+        return "No measurable rules"
+    return " · ".join(build_rule_summary_string(r) for r in rules)

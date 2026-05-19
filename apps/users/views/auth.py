@@ -598,6 +598,11 @@ class CurrentUserView(APIView):
                 data['profile_completeness'] = profile.profile_completeness if profile else 0
                 data['onboarding_completed'] = profile.onboarding_completed if profile else False
 
+            # Program access status (plan 14-02): everything FE needs to render
+            # lock states without extra requests.
+            from apps.nests.services import EnrollmentService
+            data['access_status'] = EnrollmentService.access_status_for(user)
+
         return Response({
             'success': True,
             'data': data

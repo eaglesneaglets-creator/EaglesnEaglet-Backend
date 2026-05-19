@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
+from apps.nests.permissions import HasActiveProgram
 from core.pagination import StandardResultsSetPagination
 from core.permissions import IsEagle
 
@@ -154,7 +155,7 @@ class ContentItemViewSet(ViewSet):
     Content item endpoints under a module.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasActiveProgram]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def _check_module_access(self, user, module_pk):
@@ -245,7 +246,7 @@ class AssignmentViewSet(ViewSet):
     Assignment endpoints.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasActiveProgram]
 
     def list(self, request):
         """List assignments.
@@ -435,7 +436,7 @@ class ModuleQuizViewSet(ViewSet):
     GET  /content/modules/{module_pk}/quiz/attempts/   → attempt history (Eaglet)
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasActiveProgram]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def _get_module(self, module_pk):
