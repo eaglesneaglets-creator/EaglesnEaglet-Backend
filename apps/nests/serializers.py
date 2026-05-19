@@ -19,6 +19,14 @@ from .models import (
     NestResource,
     NestEvent,
 )
+from .models_program import (
+    MenteeLevelConfig,
+    Program,
+    ProgramEnrollment,
+    ProgramExitRequest,
+    ProgramObjective,
+    ProgramObjectiveRule,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -66,12 +74,35 @@ class NestListSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "slug", "eagle", "created_at"]
 
 
+class DiscoveryObjectiveSerializer(serializers.Serializer):
+    """Mentee-facing objective summary embedded in NestDetailSerializer.current_program."""
+
+    id = serializers.UUIDField()
+    title = serializers.CharField()
+    rule_summary = serializers.SerializerMethodField()
+
+    def get_rule_summary(self, obj):
+        # Local import avoids circular dependency with services <-> serializers.
+        from .services import build_objective_rule_summary
+        return build_objective_rule_summary(obj)
+
+
+class DiscoveryProgramSerializer(serializers.Serializer):
+    """Mentee-facing program summary embedded in Nest discovery payload."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    description = serializers.CharField()
+    objectives = DiscoveryObjectiveSerializer(many=True)
+
+
 class NestDetailSerializer(serializers.ModelSerializer):
     """Full nest details with eagle info."""
 
     eagle_details = UserMinimalSerializer(source="eagle", read_only=True)
     member_count = serializers.IntegerField(source="annotated_member_count", read_only=True)
     is_full = serializers.BooleanField(source="annotated_is_full", read_only=True)
+    current_program = serializers.SerializerMethodField()
 
     class Meta:
         model = Nest
@@ -79,11 +110,27 @@ class NestDetailSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "description", "industry_focus",
             "banner_image", "eagle_details", "privacy", "allow_referrals",
             "meeting_link", "max_members", "member_count", "is_full",
-            "is_active", "created_at", "updated_at",
+            "is_active", "current_program",
+            "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "slug", "eagle_details", "created_at", "updated_at",
+            "id", "slug", "eagle_details", "current_program",
+            "created_at", "updated_at",
         ]
+
+    def get_current_program(self, obj):
+        # Pick first active program for this nest (single-active-per-nest invariant).
+        # Uses prefetched programs queryset when available to avoid N+1.
+        programs = getattr(obj, "_prefetched_objects_cache", {}).get("programs")
+        if programs is not None:
+            active = next(
+                (p for p in programs if p.status == "active"), None,
+            )
+        else:
+            active = obj.programs.filter(status="active").first()
+        if active is None:
+            return None
+        return DiscoveryProgramSerializer(active).data
 
 
 class NestCreateSerializer(serializers.ModelSerializer):
@@ -315,3 +362,203 @@ class NestEventCreateSerializer(serializers.Serializer):
     event_type = serializers.ChoiceField(
         choices=NestEvent.EventType.choices, default="session"
     )
+
+
+# ---------------------------------------------------------------------------
+# Program serializers (plan 14-01)
+# ---------------------------------------------------------------------------
+
+
+class ProgramObjectiveRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProgramObjectiveRule
+        fields = ["id", "rule_type", "target", "config"]
+        read_only_fields = ["id"]
+
+    def validate_target(self, value):
+        if value < 1:
+            raise serializers.ValidationError("Target must be at least 1.")
+        return value
+
+    def validate_config(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Config must be a JSON object.")
+        return value
+
+
+class ProgramObjectiveSerializer(serializers.ModelSerializer):
+    rules = ProgramObjectiveRuleSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ProgramObjective
+        fields = ["id", "title", "description", "order", "rules"]
+        read_only_fields = ["id"]
+
+
+class ProgramSerializer(serializers.ModelSerializer):
+    """Read serializer with nested objectives + nest label."""
+
+    objectives = ProgramObjectiveSerializer(many=True, read_only=True)
+    nest_name = serializers.CharField(source="nest.name", read_only=True)
+
+    class Meta:
+        model = Program
+        fields = [
+            "id", "nest", "nest_name", "name", "description",
+            "status", "activated_at", "archived_at",
+            "objectives", "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "nest_name", "activated_at", "archived_at",
+            "objectives", "created_at", "updated_at",
+        ]
+
+
+class ProgramWriteSerializer(serializers.ModelSerializer):
+    """Create/update serializer. Excludes nested objectives — managed via separate endpoints."""
+
+    class Meta:
+        model = Program
+        fields = ["nest", "name", "description", "status"]
+
+    def validate_status(self, value):
+        instance = getattr(self, "instance", None)
+        if instance and instance.status == Program.Status.ARCHIVED and value != Program.Status.ARCHIVED:
+            raise serializers.ValidationError("Archived programs cannot be reactivated.")
+        return value
+
+
+# ---------------------------------------------------------------------------
+# Program enrollment serializers (plan 14-02)
+# ---------------------------------------------------------------------------
+
+
+class ProgramEnrollmentSerializer(serializers.ModelSerializer):
+    """Read serializer for ProgramEnrollment with mentee + program labels."""
+
+    mentee_details = UserMinimalSerializer(source="mentee", read_only=True)
+    program_name = serializers.CharField(source="program.name", read_only=True)
+    nest_id = serializers.CharField(source="program.nest_id", read_only=True)
+    nest_name = serializers.CharField(source="program.nest.name", read_only=True)
+
+    class Meta:
+        model = ProgramEnrollment
+        fields = [
+            "id", "program", "program_name", "nest_id", "nest_name",
+            "mentee", "mentee_details", "status", "application_message",
+            "requested_at", "started_at", "ended_at",
+            "reviewed_by", "ended_by", "exit_reason",
+            "rules_snapshot", "created_at", "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class ProgramApplyInputSerializer(serializers.Serializer):
+    """Input for nest enroll endpoint."""
+
+    message = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class ProgramEnrollmentDecisionInputSerializer(serializers.Serializer):
+    """Reason payload for reject / release / decline actions."""
+
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class ProgramExitRequestInputSerializer(serializers.Serializer):
+    """Mentee opt-out request payload."""
+
+    reason = serializers.CharField(required=True, max_length=1000)
+
+
+class ProgramExitDecisionInputSerializer(serializers.Serializer):
+    """Mentor decision on exit request."""
+
+    approve = serializers.BooleanField(required=True)
+    note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class ProgramExitRequestSerializer(serializers.ModelSerializer):
+    """Read serializer for ProgramExitRequest."""
+
+    requested_by_details = UserMinimalSerializer(source="requested_by", read_only=True)
+    decided_by_details = UserMinimalSerializer(source="decided_by", read_only=True)
+
+    class Meta:
+        model = ProgramExitRequest
+        fields = [
+            "id", "enrollment", "requested_by", "requested_by_details",
+            "reason", "status", "decided_by", "decided_by_details",
+            "decided_at", "decision_note", "created_at", "updated_at",
+        ]
+        read_only_fields = fields
+
+
+# ---------------------------------------------------------------------------
+# MenteeLevelConfig (plan 14-04)
+# ---------------------------------------------------------------------------
+
+
+class MenteeLevelConfigSerializer(serializers.ModelSerializer):
+    """Read view of a single level row. `level` + `unlocks_mentor_application`
+    are immutable once seeded; only `name`, `points_required`, `description`
+    are bulk-patchable."""
+
+    class Meta:
+        model = MenteeLevelConfig
+        fields = [
+            "level", "name", "points_required",
+            "unlocks_mentor_application", "description",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "level", "unlocks_mentor_application",
+            "created_at", "updated_at",
+        ]
+
+
+class MenteeLevelConfigBulkUpdateSerializer(serializers.Serializer):
+    """Validates a bulk PATCH payload. Enforces:
+       - every referenced level exists (1..5)
+       - resulting full ordered list is monotonically increasing in points_required
+       - level 5's unlocks_mentor_application cannot be flipped to False
+    """
+
+    levels = serializers.ListField(
+        child=serializers.DictField(), allow_empty=False,
+    )
+
+    def validate(self, attrs):
+        from .models_program import MenteeLevelConfig
+
+        rows = attrs["levels"]
+        existing = {c.level: c for c in MenteeLevelConfig.objects.order_by("level")}
+
+        proposed = {lvl: cfg.points_required for lvl, cfg in existing.items()}
+        for row in rows:
+            level = row.get("level")
+            if level not in existing:
+                raise serializers.ValidationError(
+                    {"levels": f"level={level} does not exist."}
+                )
+            if "points_required" in row:
+                pr = row["points_required"]
+                if not isinstance(pr, int) or pr < 0:
+                    raise serializers.ValidationError(
+                        {"levels": f"level={level} points_required must be non-negative int."}
+                    )
+                proposed[level] = pr
+            if (level == 5
+                    and row.get("unlocks_mentor_application") is False):
+                raise serializers.ValidationError(
+                    {"levels": "Cannot disable mentor application unlock on level 5."}
+                )
+
+        ordered = [proposed[k] for k in sorted(proposed)]
+        for i in range(1, len(ordered)):
+            if ordered[i] < ordered[i - 1]:
+                raise serializers.ValidationError(
+                    {"levels": "points_required must be monotonically non-decreasing across levels."}
+                )
+
+        return attrs

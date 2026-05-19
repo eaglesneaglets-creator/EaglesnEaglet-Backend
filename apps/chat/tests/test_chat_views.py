@@ -39,6 +39,29 @@ def nest(db, eagle, eaglet):
     return n
 
 
+@pytest.fixture(autouse=True)
+def _enroll_eaglet_for_gating(db, request):
+    """Eaglets need an ACTIVE ProgramEnrollment for chat REST endpoints (plan 14-03).
+    These legacy tests predate that gate; auto-create a minimal enrollment."""
+    if "eaglet" not in request.fixturenames:
+        return
+    from apps.nests.models import Nest as _Nest
+    from apps.nests.models_program import Program, ProgramEnrollment
+    eaglet = request.getfixturevalue("eaglet")
+    if ProgramEnrollment.objects.filter(
+        mentee=eaglet, status=ProgramEnrollment.Status.ACTIVE,
+    ).exists():
+        return
+    gate_eagle = User.objects.create_user(
+        email=f"gate_eagle_{eaglet.id}@t.com", password="p", role="eagle",
+    )
+    gate_nest = _Nest.objects.create(name="Gate", eagle=gate_eagle)
+    prog = Program.objects.create(nest=gate_nest, name="P", status=Program.Status.ACTIVE)
+    ProgramEnrollment.objects.create(
+        program=prog, mentee=eaglet, status=ProgramEnrollment.Status.ACTIVE,
+    )
+
+
 class TestConversationList:
     def test_unauthenticated_returns_401(self, api_client):
         resp = api_client.get("/api/v1/chat/conversations/")

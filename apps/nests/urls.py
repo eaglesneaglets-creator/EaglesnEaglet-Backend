@@ -15,6 +15,12 @@ from .views import (
     NestResourceViewSet,
     NestEventViewSet,
     UploadMediaView,
+    ProgramViewSet,
+    ProgramObjectiveViewSet,
+    ProgramObjectiveRuleViewSet,
+    NestEnrollmentView,
+    ProgramEnrollmentViewSet,
+    ProgramExitRequestViewSet,
 )
 
 # Top-level nest router
@@ -51,10 +57,48 @@ nested_urlpatterns = [
     path("resources/", resource_list, name="nest-resources"),
     path("events/", event_list, name="nest-events"),
     path("events/<uuid:pk>/attend/", event_attend, name="nest-event-attend"),
+    path("enroll/", NestEnrollmentView.as_view(), name="nest-enroll"),
+]
+
+# Program routes (plan 14-01) — admin-only CRUD.
+# Mounted under /nests/programs/ so they sit alongside the nest list routes
+# without colliding with the `<uuid:nest_pk>/` detail/nested paths above.
+program_list = ProgramViewSet.as_view({"get": "list", "post": "create"})
+program_detail = ProgramViewSet.as_view({
+    "get": "retrieve", "patch": "partial_update",
+    "put": "update", "delete": "destroy",
+})
+objective_list = ProgramObjectiveViewSet.as_view({"get": "list", "post": "create"})
+objective_detail = ProgramObjectiveViewSet.as_view({
+    "get": "retrieve", "patch": "partial_update",
+    "put": "update", "delete": "destroy",
+})
+rule_list = ProgramObjectiveRuleViewSet.as_view({"get": "list", "post": "create"})
+rule_detail = ProgramObjectiveRuleViewSet.as_view({
+    "get": "retrieve", "patch": "partial_update",
+    "put": "update", "delete": "destroy",
+})
+
+program_urlpatterns = [
+    path("", program_list, name="program-list"),
+    path("<uuid:pk>/", program_detail, name="program-detail"),
+    path("<uuid:program_pk>/objectives/", objective_list, name="program-objectives"),
+    path("<uuid:program_pk>/objectives/<uuid:pk>/", objective_detail, name="program-objective-detail"),
+    path(
+        "<uuid:program_pk>/objectives/<uuid:objective_pk>/rules/",
+        rule_list, name="program-objective-rules",
+    ),
+    path(
+        "<uuid:program_pk>/objectives/<uuid:objective_pk>/rules/<uuid:pk>/",
+        rule_detail, name="program-objective-rule-detail",
+    ),
 ]
 
 urlpatterns = [
+    # Program routes MUST come before the nest router to avoid `programs`
+    # being captured by the `<uuid:pk>` slug on the nest detail route.
+    path("programs/", include(program_urlpatterns)),
+    path("upload/", UploadMediaView.as_view(), name="nest-media-upload"),
     path("", include(router.urls)),
     path("<uuid:nest_pk>/", include(nested_urlpatterns)),
-    path("upload/", UploadMediaView.as_view(), name="nest-media-upload"),
 ]

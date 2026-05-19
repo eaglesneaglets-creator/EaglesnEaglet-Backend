@@ -30,6 +30,7 @@ from .serializers import (
     NestEventSerializer,
     NestEventCreateSerializer,
 )
+from .permissions import HasActiveProgram, IsPlatformAdmin
 from .services import NestService, MembershipService, CommunityService
 
 
@@ -102,6 +103,7 @@ class NestViewSet(ViewSet):
         try:
             nest = _annotate_nest_counts(
                 Nest.objects.select_related("eagle")
+                .prefetch_related("programs__objectives__rules")
             ).get(pk=pk)
         except Nest.DoesNotExist:
             return Response(
@@ -266,36 +268,37 @@ class MentorshipRequestViewSet(ViewSet):
         return Response({"success": True, "data": serializer.data})
 
     def create(self, request, nest_pk=None):
-        """Eaglet requests to join a Nest."""
-        serializer = MentorshipRequestCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        req = MembershipService.request_to_join(
-            request.user, nest_pk, serializer.validated_data.get("message", "")
-        )
+        """Plan 14.6-01: retired. Use POST /nests/{nest_pk}/enroll/ instead."""
         return Response(
-            {"success": True, "data": MentorshipRequestSerializer(req).data},
-            status=status.HTTP_201_CREATED,
+            {
+                "success": False,
+                "error": {
+                    "code": "LegacyJoinFlowRetired",
+                    "message": (
+                        "This join flow has been retired. "
+                        "Use POST /nests/{nest_id}/enroll/ instead."
+                    ),
+                    "migration_endpoint": f"/nests/{nest_pk}/enroll/",
+                },
+            },
+            status=status.HTTP_410_GONE,
         )
 
     def partial_update(self, request, nest_pk=None, pk=None):
-        """Approve or reject a mentorship request."""
-        action_type = request.data.get("action")
-
-        if action_type == "approve":
-            membership = MembershipService.approve_request(request.user, pk)
-            return Response(
-                {"success": True, "data": MembershipSerializer(membership).data}
-            )
-        elif action_type == "reject":
-            req = MembershipService.reject_request(request.user, pk)
-            return Response(
-                {"success": True, "data": MentorshipRequestSerializer(req).data}
-            )
-
+        """Plan 14.6-01: retired. Approve/reject happens on ProgramEnrollment."""
         return Response(
-            {"success": False, "error": {"message": "action must be 'approve' or 'reject'."}},
-            status=status.HTTP_400_BAD_REQUEST,
+            {
+                "success": False,
+                "error": {
+                    "code": "LegacyJoinFlowRetired",
+                    "message": (
+                        "Approval of legacy mentorship requests is retired. "
+                        "Manage approvals on /program-enrollments/{id}/."
+                    ),
+                    "migration_endpoint": "/program-enrollments/",
+                },
+            },
+            status=status.HTTP_410_GONE,
         )
 
 
@@ -373,7 +376,7 @@ class NestPostViewSet(ViewSet):
 class NestResourceViewSet(ViewSet):
     """Nest shared library endpoints."""
 
-    permission_classes = [IsAuthenticated, IsNestMember]
+    permission_classes = [IsAuthenticated, IsNestMember, HasActiveProgram]
 
     def list(self, request, nest_pk=None):
         """List resources in a Nest."""
@@ -464,3 +467,497 @@ class UploadMediaView(APIView):
             MediaUploadResponseSerializer({"url": result["secure_url"], "type": media_type}).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+# ===========================================================================
+# Program admin viewsets (plan 14-01)
+#
+# Permission model: nest owner OR platform staff. Mentee-facing program
+# discovery + enrollment endpoints arrive in plan 14-02.
+# ===========================================================================
+
+from django.utils import timezone
+from rest_framework.viewsets import ModelViewSet
+
+from .models_program import Program, ProgramObjective, ProgramObjectiveRule
+from .permissions import IsProgramAdmin, ProgramRulesLocked
+from .serializers import (
+    ProgramSerializer,
+    ProgramWriteSerializer,
+    ProgramObjectiveSerializer,
+    ProgramObjectiveRuleSerializer,
+)
+
+
+class ProgramViewSet(ModelViewSet):
+    """CRUD for Program. Eagles see only their nests; staff see all."""
+
+    queryset = (
+        Program.objects.select_related("nest")
+        .prefetch_related("objectives__rules")
+        .order_by("-created_at")
+    )
+    permission_classes = [IsProgramAdmin]
+
+    def get_serializer_class(self):
+        if self.action in {"create", "update", "partial_update"}:
+            return ProgramWriteSerializer
+        return ProgramSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if not self.request.user.is_staff:
+            qs = qs.filter(nest__eagle=self.request.user)
+        # Plan 14.5-01: honor ?nest=<uuid> filter for FE single-program lookups.
+        nest_param = self.request.query_params.get("nest")
+        if nest_param:
+            import uuid as _uuid
+            try:
+                _uuid.UUID(str(nest_param))
+                qs = qs.filter(nest_id=nest_param)
+            except (ValueError, TypeError):
+                qs = qs.none()
+        return qs
+
+    def perform_create(self, serializer):
+        nest = serializer.validated_data.get("nest")
+        if nest is not None and not self.request.user.is_staff and nest.eagle_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("You can only create programs for nests you own.")
+        # Plan 14.5-01: enforce single-active-per-nest invariant at write time.
+        new_status = serializer.validated_data.get("status", "draft")
+        if new_status == Program.Status.ACTIVE and nest is not None:
+            existing = Program.objects.filter(nest=nest, status=Program.Status.ACTIVE).exists()
+            if existing:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({
+                    "status": "ActiveProgramExists: This nest already has an active program. Archive the current one before activating another.",
+                })
+        serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        new_status = serializer.validated_data.get("status", instance.status)
+        timestamps = {}
+        if new_status == Program.Status.ACTIVE and instance.status != Program.Status.ACTIVE:
+            timestamps["activated_at"] = timezone.now()
+        if new_status == Program.Status.ARCHIVED and instance.status != Program.Status.ARCHIVED:
+            timestamps["archived_at"] = timezone.now()
+        serializer.save(**timestamps)
+
+
+class ProgramObjectiveViewSet(ModelViewSet):
+    """CRUD for objectives nested under a Program."""
+
+    serializer_class = ProgramObjectiveSerializer
+    permission_classes = [IsProgramAdmin, ProgramRulesLocked]
+
+    def get_queryset(self):
+        program_id = self.kwargs["program_pk"]
+        qs = ProgramObjective.objects.filter(program_id=program_id).prefetch_related("rules")
+        if not self.request.user.is_staff:
+            qs = qs.filter(program__nest__eagle=self.request.user)
+        return qs
+
+    def perform_create(self, serializer):
+        program_id = self.kwargs["program_pk"]
+        program = Program.objects.select_related("nest").get(pk=program_id)
+        if not self.request.user.is_staff and program.nest.eagle_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Cannot add objectives to a program you do not own.")
+        serializer.save(program=program)
+
+
+class ProgramObjectiveRuleViewSet(ModelViewSet):
+    """CRUD for rules nested under a ProgramObjective."""
+
+    serializer_class = ProgramObjectiveRuleSerializer
+    permission_classes = [IsProgramAdmin, ProgramRulesLocked]
+
+    def get_queryset(self):
+        objective_id = self.kwargs["objective_pk"]
+        qs = ProgramObjectiveRule.objects.filter(objective_id=objective_id)
+        if not self.request.user.is_staff:
+            qs = qs.filter(objective__program__nest__eagle=self.request.user)
+        return qs
+
+    def perform_create(self, serializer):
+        objective_id = self.kwargs["objective_pk"]
+        objective = ProgramObjective.objects.select_related("program__nest").get(pk=objective_id)
+        if not self.request.user.is_staff and objective.program.nest.eagle_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Cannot add rules to an objective you do not own.")
+        serializer.save(objective=objective)
+
+
+# ===========================================================================
+# Program enrollment views (plan 14-02)
+# ===========================================================================
+
+from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
+from rest_framework.exceptions import ValidationError as DRFValidationError
+
+from .models_program import ProgramEnrollment, ProgramExitRequest
+from .permissions import IsEnrollmentParticipant
+from .serializers import (
+    ProgramEnrollmentSerializer,
+    ProgramApplyInputSerializer,
+    ProgramEnrollmentDecisionInputSerializer,
+    ProgramExitRequestInputSerializer,
+    ProgramExitDecisionInputSerializer,
+    ProgramExitRequestSerializer,
+)
+from .services import (
+    EnrollmentService,
+    EnrollmentError,
+    AlreadyEnrolled,
+    NoActiveProgram,
+    InvalidTransition,
+)
+
+
+def _enrollment_error_response(exc: EnrollmentError):
+    """Map EnrollmentError → 400 with machine-readable code."""
+    return Response(
+        {
+            "success": False,
+            "error": {
+                "type": exc.__class__.__name__,
+                "code": exc.error_code,
+                "message": str(exc),
+            },
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+class NestEnrollmentView(APIView):
+    """POST /api/v1/nests/{nest_pk}/enroll/ — mentee applies to nest's active program."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, nest_pk=None):
+        from .models import Nest
+        try:
+            nest = Nest.objects.get(pk=nest_pk, is_active=True)
+        except Nest.DoesNotExist:
+            return Response(
+                {"success": False, "error": {"message": "Nest not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = ProgramApplyInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            enrollment = EnrollmentService.apply(
+                mentee=request.user,
+                nest=nest,
+                message=serializer.validated_data.get("message", ""),
+            )
+        except EnrollmentError as exc:
+            return _enrollment_error_response(exc)
+        except DRFPermissionDenied as exc:
+            return Response(
+                {"success": False, "error": {"message": str(exc)}},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        return Response(
+            {"success": True, "data": ProgramEnrollmentSerializer(enrollment).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ProgramEnrollmentViewSet(ViewSet):
+    """
+    /api/v1/program-enrollments/ — list / retrieve enrollments.
+    Custom actions: approve, reject, release, complete, opt-out-request.
+    """
+
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def _get_obj(self, pk):
+        return (
+            ProgramEnrollment.objects
+            .select_related("program__nest", "mentee")
+            .get(pk=pk)
+        )
+
+    def list(self, request):
+        """Mentor/staff view of enrollments. Filters: ?nest, ?status."""
+        if request.user.role not in {"eagle", "admin"} and not request.user.is_staff:
+            return Response(
+                {"success": False, "error": {"message": "Forbidden."}},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        qs = (
+            ProgramEnrollment.objects
+            .select_related("program__nest", "mentee")
+            .order_by("-requested_at")
+        )
+        if not request.user.is_staff:
+            qs = qs.filter(program__nest__eagle=request.user)
+
+        nest_id = request.query_params.get("nest")
+        if nest_id:
+            qs = qs.filter(program__nest_id=nest_id)
+        status_q = request.query_params.get("status")
+        if status_q:
+            qs = qs.filter(status=status_q)
+
+        paginator = StandardResultsSetPagination()
+        page = paginator.paginate_queryset(qs, request)
+        serializer = ProgramEnrollmentSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+    def retrieve(self, request, pk=None):
+        try:
+            enrollment = self._get_obj(pk)
+        except ProgramEnrollment.DoesNotExist:
+            return Response(
+                {"success": False, "error": {"message": "Enrollment not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        # Object permission check
+        if not IsEnrollmentParticipant().has_object_permission(request, self, enrollment):
+            return Response(
+                {"success": False, "error": {"message": "Forbidden."}},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return Response(
+            {"success": True, "data": ProgramEnrollmentSerializer(enrollment).data}
+        )
+
+    @action(detail=False, methods=["get"], url_path="my-active")
+    def my_active(self, request):
+        """Mentee's currently active enrollment, if any."""
+        enrollment = (
+            ProgramEnrollment.objects
+            .filter(mentee=request.user, status=ProgramEnrollment.Status.ACTIVE)
+            .select_related("program__nest")
+            .first()
+        )
+        if not enrollment:
+            return Response(
+                {"success": True, "data": None}
+            )
+        return Response(
+            {"success": True, "data": ProgramEnrollmentSerializer(enrollment).data}
+        )
+
+    @action(detail=False, methods=["get"], url_path="my-requests")
+    def my_requests(self, request):
+        """Mentee's enrollment history (all statuses), newest first."""
+        qs = (
+            ProgramEnrollment.objects
+            .filter(mentee=request.user)
+            .select_related("program__nest")
+            .order_by("-requested_at")
+        )
+        serializer = ProgramEnrollmentSerializer(qs, many=True)
+        return Response({"success": True, "data": serializer.data})
+
+    def _admin_action(self, request, pk, service_call, success_status=status.HTTP_200_OK):
+        try:
+            enrollment = self._get_obj(pk)
+        except ProgramEnrollment.DoesNotExist:
+            return Response(
+                {"success": False, "error": {"message": "Enrollment not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        # Mentor or staff only
+        if not request.user.is_staff and enrollment.program.nest.eagle_id != request.user.id:
+            return Response(
+                {"success": False, "error": {"message": "Forbidden."}},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            result = service_call(enrollment)
+        except EnrollmentError as exc:
+            return _enrollment_error_response(exc)
+        return Response(
+            {"success": True, "data": ProgramEnrollmentSerializer(result).data},
+            status=success_status,
+        )
+
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request, pk=None):
+        return self._admin_action(
+            request, pk,
+            lambda e: EnrollmentService.approve(enrollment_id=e.id, reviewer=request.user),
+        )
+
+    @action(detail=True, methods=["post"], url_path="reject")
+    def reject(self, request, pk=None):
+        serializer = ProgramEnrollmentDecisionInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data.get("reason", "")
+        return self._admin_action(
+            request, pk,
+            lambda e: EnrollmentService.reject(
+                enrollment_id=e.id, reviewer=request.user, reason=reason,
+            ),
+        )
+
+    @action(detail=True, methods=["post"], url_path="release")
+    def release(self, request, pk=None):
+        serializer = ProgramEnrollmentDecisionInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data.get("reason", "")
+        return self._admin_action(
+            request, pk,
+            lambda e: EnrollmentService.release(
+                enrollment_id=e.id, actor=request.user, reason=reason,
+            ),
+        )
+
+    @action(detail=True, methods=["post"], url_path="complete")
+    def complete(self, request, pk=None):
+        force = (
+            str(request.query_params.get("force", "")).lower() in ("true", "1", "yes")
+            and request.user.is_staff
+        )
+        return self._admin_action(
+            request, pk,
+            lambda e: EnrollmentService.complete(
+                enrollment_id=e.id, actor=request.user, force=force,
+            ),
+        )
+
+    @action(detail=True, methods=["post"], url_path="opt-out-request")
+    def opt_out_request(self, request, pk=None):
+        try:
+            enrollment = self._get_obj(pk)
+        except ProgramEnrollment.DoesNotExist:
+            return Response(
+                {"success": False, "error": {"message": "Enrollment not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if enrollment.mentee_id != request.user.id:
+            return Response(
+                {"success": False, "error": {"message": "Only the mentee can opt out."}},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = ProgramExitRequestInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            exit_req = EnrollmentService.request_opt_out(
+                enrollment_id=enrollment.id,
+                mentee=request.user,
+                reason=serializer.validated_data["reason"],
+            )
+        except EnrollmentError as exc:
+            return _enrollment_error_response(exc)
+        return Response(
+            {"success": True, "data": ProgramExitRequestSerializer(exit_req).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class ProgramExitRequestViewSet(ViewSet):
+    """/api/v1/program-exit-requests/ — mentor reviews + decides exits."""
+
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        if request.user.role not in {"eagle", "admin"} and not request.user.is_staff:
+            return Response(
+                {"success": False, "error": {"message": "Forbidden."}},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        qs = (
+            ProgramExitRequest.objects
+            .select_related("enrollment__program__nest", "requested_by")
+            .order_by("-created_at")
+        )
+        if not request.user.is_staff:
+            qs = qs.filter(enrollment__program__nest__eagle=request.user)
+        status_q = request.query_params.get("status")
+        if status_q:
+            qs = qs.filter(status=status_q)
+        serializer = ProgramExitRequestSerializer(qs, many=True)
+        return Response({"success": True, "data": serializer.data})
+
+    @action(detail=True, methods=["post"], url_path="decide")
+    def decide(self, request, pk=None):
+        try:
+            exit_req = (
+                ProgramExitRequest.objects
+                .select_related("enrollment__program__nest")
+                .get(pk=pk)
+            )
+        except ProgramExitRequest.DoesNotExist:
+            return Response(
+                {"success": False, "error": {"message": "Exit request not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if not request.user.is_staff and exit_req.enrollment.program.nest.eagle_id != request.user.id:
+            return Response(
+                {"success": False, "error": {"message": "Forbidden."}},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = ProgramExitDecisionInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated = EnrollmentService.decide_opt_out(
+                exit_request_id=exit_req.id,
+                decider=request.user,
+                approve=serializer.validated_data["approve"],
+                note=serializer.validated_data.get("note", ""),
+            )
+        except EnrollmentError as exc:
+            return _enrollment_error_response(exc)
+        return Response(
+            {"success": True, "data": ProgramExitRequestSerializer(updated).data}
+        )
+
+
+class MenteeLevelConfigViewSet(ViewSet):
+    """
+    Admin CRUD for the 5 MenteeLevelConfig rows (plan 14-04).
+
+    GET   /api/v1/admin/mentee-levels/  → list all 5 rows ordered by level
+    PATCH /api/v1/admin/mentee-levels/  → bulk-update thresholds/names/descriptions
+
+    Locked: cannot create/delete rows (fixed 5 tiers); cannot disable
+    `unlocks_mentor_application` on level 5; points_required must stay
+    monotonically non-decreasing across levels.
+    """
+
+    permission_classes = [IsAuthenticated, IsPlatformAdmin]
+
+    def list(self, request):
+        from .models_program import MenteeLevelConfig
+        from .serializers import MenteeLevelConfigSerializer
+        qs = MenteeLevelConfig.objects.order_by("level")
+        return Response(
+            {"success": True, "data": MenteeLevelConfigSerializer(qs, many=True).data}
+        )
+
+    @action(detail=False, methods=["patch"], url_path="bulk-update")
+    def bulk_update(self, request):
+        from django.db import transaction
+        from .models_program import MenteeLevelConfig
+        from .serializers import (
+            MenteeLevelConfigBulkUpdateSerializer,
+            MenteeLevelConfigSerializer,
+        )
+        payload = MenteeLevelConfigBulkUpdateSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        editable = {"name", "points_required", "description"}
+        with transaction.atomic():
+            for row in payload.validated_data["levels"]:
+                level = row["level"]
+                updates = {k: v for k, v in row.items() if k in editable}
+                if updates:
+                    MenteeLevelConfig.objects.filter(level=level).update(**updates)
+        qs = MenteeLevelConfig.objects.order_by("level")
+        return Response(
+            {"success": True, "data": MenteeLevelConfigSerializer(qs, many=True).data}
+        )
+
+    def partial_update(self, request, pk=None):
+        return self.bulk_update(request)

@@ -79,15 +79,21 @@ class IsNestOwner(BasePermission):
 
 class IsNestMember(BasePermission):
     """
-    Allow access to users who are active members of the Nest.
+    Allow access to users who are members of the Nest.
 
     Resolves the nest from ``nest_pk`` or ``pk`` URL kwargs.
     Admins bypass this check.
+
+    Plan 14.5-01: SAFE_METHODS (GET/HEAD/OPTIONS) allowed for both ACTIVE and
+    INACTIVE memberships so terminal-enrollment mentees retain read-only access
+    to past Nest content. Unsafe methods still require ACTIVE membership.
     """
 
     message = "You must be an active member of this Nest."
 
     def has_permission(self, request, view):
+        from rest_framework.permissions import SAFE_METHODS
+
         if not request.user.is_authenticated:
             return False
 
@@ -101,15 +107,16 @@ class IsNestMember(BasePermission):
         # Import here to avoid circular dependency with nests app
         from apps.nests.models import NestMembership, Nest
 
+        membership_statuses = ("active", "inactive") if request.method in SAFE_METHODS else ("active",)
         is_member = NestMembership.objects.filter(
             nest_id=nest_id,
             user=request.user,
-            status="active",
+            status__in=membership_statuses,
         ).exists()
-        
+
         if is_member:
             return True
-            
+
         # Allow nest owner
         return Nest.objects.filter(
             pk=nest_id,

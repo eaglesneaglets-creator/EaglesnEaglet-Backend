@@ -27,7 +27,7 @@ from core.throttling import BurstRateThrottle, LoginRateThrottle, RegisterRateTh
 logger = logging.getLogger(__name__)
 
 from .auth import _set_auth_cookies, _clear_auth_cookies
-from ..models import User, MentorKYC, MenteeKYC, EagletProfile
+from ..models import User, MentorKYC, MenteeKYC, EagletProfile, UserProfile
 from ..serializers import (
     CustomTokenObtainPairSerializer,
     UserSerializer,
@@ -95,10 +95,13 @@ class GoogleOAuthLoginView(APIView):
                 }
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # Get role from query params
-        role = request.GET.get('role', 'eaglet')
-        if role not in ['eagle', 'eaglet']:
-            role = 'eaglet'
+        # Get role from query params. Empty string sentinel means "login flow,
+        # infer from existing user" — callback will reject new-user creation
+        # to prevent silent role coercion (e.g. login page hardcoded eaglet
+        # would otherwise create existing mentor accounts as mentees).
+        role = request.GET.get('role', '')
+        if role not in ['eagle', 'eaglet', '']:
+            role = ''
 
         # Generate CSRF nonce and store in cache for verification
         csrf_nonce = _secrets.token_urlsafe(32)
@@ -320,13 +323,33 @@ class GoogleOAuthCallbackView(APIView):
 
             # Check if user was created with different auth method
             if not user.google_id:
-                # Link Google account to existing user
+                # Link Google account to existing user.
+                # Google has proven email ownership — flip verification flag
+                # so the user can use either OAuth or email/password login.
+                update_fields = ['google_id']
                 user.google_id = google_id
+                if not user.is_email_verified:
+                    user.is_email_verified = True
+                    update_fields.append('is_email_verified')
                 if picture and not user.profile_picture_url:
                     user.profile_picture_url = picture
-                user.save(update_fields=['google_id', 'profile_picture_url'] if picture else ['google_id'])
+                    update_fields.append('profile_picture_url')
+                user.save(update_fields=update_fields)
 
         except User.DoesNotExist:
+            # Login flow with no role hint → reject; user must register first.
+            # Prevents silent role coercion when login page hardcodes 'eaglet'.
+            if role not in ('eagle', 'eaglet'):
+                return Response({
+                    'success': False,
+                    'error': {
+                        'code': 'AccountNotFound',
+                        'message': (
+                            "No account found for this Google email. "
+                            "Please register first, then return to log in."
+                        ),
+                    }
+                }, status=status.HTTP_404_NOT_FOUND)
             # Create new user
             user = User.objects.create_user(
                 email=email,
@@ -348,6 +371,10 @@ class GoogleOAuthCallbackView(APIView):
                 MentorKYC.objects.create(user=user)
             else:
                 EagletProfile.objects.create(user=user)
+
+            # Create UserProfile (parity with traditional register flow).
+            # Triggers 'Egg Cracker' welcome badge for eaglets via signal in apps/points/signals.py.
+            UserProfile.objects.get_or_create(user=user)
 
         # Generate JWT tokens
         refresh = RefreshToken.for_user(user)

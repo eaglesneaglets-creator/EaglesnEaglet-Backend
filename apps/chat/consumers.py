@@ -43,6 +43,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=4003)
             return
 
+        # Gate eaglet WS connections behind active program enrollment (plan 14-03).
+        if not await self._has_active_program(user):
+            await self.close(code=4004)
+            return
+
         self.user = user
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
@@ -160,6 +165,17 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         except Exception:
             logger.exception("Unexpected error during ChatConsumer authentication")
             return None
+
+    async def _has_active_program(self, user) -> bool:
+        """Eagles + admins bypass; eaglets need an ACTIVE ProgramEnrollment."""
+        if user.is_staff or getattr(user, "role", None) != "eaglet":
+            return True
+        from apps.nests.models_program import ProgramEnrollment
+        return await database_sync_to_async(
+            ProgramEnrollment.objects.filter(
+                mentee=user, status=ProgramEnrollment.Status.ACTIVE,
+            ).exists
+        )()
 
     async def _is_participant(self, user, conversation_id: str) -> bool:
         from apps.chat.models import Conversation

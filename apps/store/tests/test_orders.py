@@ -167,10 +167,7 @@ class TestInitializePayment:
             {},
             format="json",
         )
-        # InitializePaymentView uses authentication_classes=[] for guest support.
-        # An unauthenticated request takes the guest path and cannot find a
-        # user-owned order (user__isnull=True filter) → 404 instead of 401.
-        assert r.status_code == 404
+        assert r.status_code == 401
 
     @_patch("apps.store.views.PaystackService.initialize_payment")
     def test_paid_order_cannot_reinitialize(self, mock_init, api, user, db):
