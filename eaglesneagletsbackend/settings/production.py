@@ -399,3 +399,24 @@ FRONTEND_URL = config('FRONTEND_URL', default='')
 # HEALTH CHECK SETTINGS
 # =============================================================================
 HEALTH_CHECK_TOKEN = config('HEALTH_CHECK_TOKEN', default=None)
+
+# --- Throttle tuning (May 2026 fix) -------------------------------------------
+# Default base.py 'user: 1000/hour' is too tight: dashboard mount fires 8
+# endpoints, refresh-on-focus + WS-driven invalidations stack quickly, and
+# multi-tab use multiplies the bucket. Observed: 2566s cool-off in production
+# from normal mentee dashboard usage.
+#
+# 5000/hour ≈ 80/min, comfortable for any single user's real activity but
+# still rejects abusive scripted scrapes. Tune via Railway env if needed.
+import os as _os
+REST_FRAMEWORK.setdefault('DEFAULT_THROTTLE_RATES', {})
+REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'].update({
+    'user': _os.environ.get('THROTTLE_USER_RATE', '5000/hour'),
+    'anon': _os.environ.get('THROTTLE_ANON_RATE', '300/hour'),
+    'burst': _os.environ.get('THROTTLE_BURST_RATE', '180/minute'),
+    'login': _os.environ.get('THROTTLE_LOGIN_RATE', '20/minute'),
+    'register': _os.environ.get('THROTTLE_REGISTER_RATE', '10/minute'),
+})
+
+# RateLimitByIPMiddleware ceiling on /auth/login etc.
+SENSITIVE_RATE_LIMIT_PER_MIN = int(_os.environ.get('SENSITIVE_RATE_LIMIT_PER_MIN', '60'))
