@@ -20,6 +20,13 @@ _ZERO_BLOCK = {
     "next_level": 1,
     "points_to_next": None,
     "mentor_eligible": False,
+    # FE-shape aliases (MenteeLevelCard reads these).
+    "points": 0,
+    "next_threshold": None,
+    "progress_pct": 0,
+    # Distinguishes "no qualifying enrollment yet" from "enrolled but no points".
+    # FE uses this to surface an educational empty state instead of "0 pts / 0%".
+    "requires_enrollment": True,
 }
 
 
@@ -75,27 +82,51 @@ def compute_level(user) -> dict:
 
     if current_config is None:
         first = configs[0] if configs else None
+        first_threshold = first.points_required if first else None
+        progress_pct = (
+            int((points_total / first_threshold) * 100)
+            if first_threshold else 0
+        )
         return {
             "current_level": 0,
             "current_level_name": None,
             "points_total": points_total,
             "next_level": first.level if first else None,
-            "points_to_next": (first.points_required - points_total) if first else None,
+            "points_to_next": (first_threshold - points_total) if first else None,
             "mentor_eligible": False,
+            # FE-shape aliases.
+            "points": points_total,
+            "next_threshold": first_threshold,
+            "progress_pct": min(100, max(0, progress_pct)),
+            "requires_enrollment": False,
         }
 
     next_cfg = next(
         (c for c in configs if c.level > current_config.level), None,
     )
+    next_threshold = next_cfg.points_required if next_cfg else None
+    # Progress within current level band: 0% at current threshold, 100% at next.
+    if next_cfg is not None:
+        band = next_cfg.points_required - current_config.points_required
+        progress_pct = int(
+            ((points_total - current_config.points_required) / band) * 100
+        ) if band > 0 else 100
+    else:
+        progress_pct = 100
     return {
         "current_level": current_config.level,
         "current_level_name": current_config.name,
         "points_total": points_total,
         "next_level": next_cfg.level if next_cfg else None,
         "points_to_next": (
-            next_cfg.points_required - points_total if next_cfg else None
+            next_threshold - points_total if next_threshold is not None else None
         ),
         "mentor_eligible": bool(current_config.unlocks_mentor_application),
+        # FE-shape aliases.
+        "points": points_total,
+        "next_threshold": next_threshold,
+        "progress_pct": min(100, max(0, progress_pct)),
+        "requires_enrollment": False,
     }
 
 
