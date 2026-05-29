@@ -1,0 +1,33 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Admin team update{% endblock %}
+
+{% block content %}
+<h2>Admin team update</h2>
+
+<p>
+    <strong>{{ demoted_name }}</strong>
+    (<a href="mailto:{{ demoted_email }}">{{ demoted_email }}</a>)
+    is no longer an admin on Eagles &amp; Eaglets.
+</p>
+
+<div class="info-box">
+    <p>
+        <strong>Remaining admin pool:</strong> {{ remaining_count }} admin{{ remaining_count|pluralize }}.
+    </p>
+</div>
+
+<div class="button-wrapper">
+    <a href="{{ team_url }}" class="button">Open admin team</a>
+</div>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #94a3b8;">
+    You're receiving this because you're an admin on Eagles &amp; Eaglets.
+    {% if remaining_count <= 1 %}
+        <br><strong>Heads up:</strong> the admin pool is small. Consider
+        inviting another trusted user.
+    {% endif %}
+</p>
+{% endblock %}

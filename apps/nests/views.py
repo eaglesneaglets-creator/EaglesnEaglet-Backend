@@ -58,7 +58,10 @@ class NestViewSet(ViewSet):
     GET  /nests/{id}/      → detail
     PATCH /nests/{id}/     → update (owner only)
     DELETE /nests/{id}/    → soft-delete (owner only)
-    GET  /nests/my/        → eaglet's nests
+    GET  /nests/joined/    → nests the user is an active member of (eaglet)
+    GET  /nests/owned/     → nests the user owns (eagle)
+    GET  /nests/my/        → DEPRECATED alias for /nests/joined/. Remove next
+                             release once all clients migrate.
     """
 
     permission_classes = [IsAuthenticated]
@@ -206,12 +209,24 @@ class NestViewSet(ViewSet):
         ]
         return Response({"success": True, "data": data})
 
-    @action(detail=False, methods=["get"], url_path="my")
-    def my_nests(self, request):
-        """List nests the current eaglet belongs to."""
+    @action(detail=False, methods=["get"], url_path="joined")
+    def joined_nests(self, request):
+        """Nests where the current user is an active member (eaglet view)."""
         nests = NestService.get_eaglet_nests(request.user)
         serializer = NestListSerializer(nests, many=True)
         return Response({"success": True, "data": serializer.data})
+
+    @action(detail=False, methods=["get"], url_path="owned")
+    def owned_nests(self, request):
+        """Nests where the current user is the eagle owner (mentor view)."""
+        nests = NestService.get_eagle_nests(request.user)
+        serializer = NestListSerializer(nests, many=True)
+        return Response({"success": True, "data": serializer.data})
+
+    @action(detail=False, methods=["get"], url_path="my")
+    def my_nests(self, request):
+        """DEPRECATED — alias of /nests/joined/. Kept for back-compat."""
+        return self.joined_nests(request)
 
     @action(detail=False, methods=["get"], url_path="my-requests")
     def my_requests(self, request):

@@ -130,7 +130,6 @@ class RegisterView(APIView):
 
         # Track email sending status
         email_sent = False
-        email_error = None
 
         # Try to send verification email
         try:
@@ -151,11 +150,11 @@ class RegisterView(APIView):
                     send_verification_email(str(user.id), raw_token)
                     email_sent = True
                 except Exception as sync_error:
+                    # Already logged above; email_sent stays False so the
+                    # response message tells the user to use resend.
                     logger.error(f"Sync email send failed: {sync_error}")
-                    email_error = str(sync_error)
         except ImportError as e:
             logger.error(f"Could not import send_verification_email: {e}")
-            email_error = "Email service not configured"
 
         return Response({
             'success': True,
@@ -194,10 +193,15 @@ class LoginView(TokenObtainPairView):
                     'data': {
                         'user': user_data,
                         'access': access,
-                        # SECURITY NOTE: Refresh token is in body for cross-origin fallback.
-                        # For production, configure same-origin deployment (reverse proxy)
-                        # so httpOnly cookies work as first-party. This eliminates XSS risk.
-                        # See: docs/SECURITY.md for deployment recommendations.
+                        # SECURITY TRADE-OFF (temporary — until same-origin
+                        # domain is available):
+                        # Refresh token is also returned in JSON so the FE
+                        # can stash it in localStorage and survive cross-
+                        # origin deploys where the HttpOnly cookie below is
+                        # treated as third-party and blocked. XSS can
+                        # exfiltrate this token. Once FE + BE share a
+                        # parent domain (eTLD+1), DROP this line and rely
+                        # solely on the cookie. See audit P0 #1.
                         'refresh': refresh,
                     },
                 })
@@ -314,9 +318,12 @@ class CustomTokenRefreshView(TokenRefreshView):
             access = serializer.validated_data.get('access')
             rotated_refresh = serializer.validated_data.get('refresh')  # present when ROTATE_REFRESH_TOKENS=True
 
-            # Return both tokens in the body for cross-origin deployments
-            # where httpOnly cookies are blocked as third-party.
-            # The httpOnly cookie is ALSO set as the primary mechanism.
+            # SECURITY TRADE-OFF (temporary — see login view note for why).
+            # We return the rotated refresh in the JSON body so the
+            # cross-origin FE can store the new value in localStorage and
+            # use it on the next refresh. When the platform has a single
+            # parent domain, drop the 'refresh' field and rely on the
+            # HttpOnly cookie alone.
             api_response = Response({
                 'success': True,
                 'access': str(access),
@@ -375,7 +382,12 @@ class EmailVerificationView(APIView):
         token = serializer.validated_data['token']
 
         try:
-            user = User.objects.get(email_verification_token=token)
+            # DB stores SHA-256 hash of the token (not the raw value), so we
+            # must hash the incoming token before querying. The link in the
+            # email contains the raw token; only the hash sits at rest.
+            user = User.objects.get(
+                email_verification_token=User._hash_token(token),
+            )
             if user.verify_email(token):
                 return Response({
                     'success': True,
@@ -509,7 +521,11 @@ class PasswordResetConfirmView(APIView):
         new_password = serializer.validated_data['new_password']
 
         try:
-            user = User.objects.get(password_reset_token=token)
+            # DB stores SHA-256 hash of the token (not the raw value), so we
+            # must hash the incoming token before querying.
+            user = User.objects.get(
+                password_reset_token=User._hash_token(token),
+            )
             if user.reset_password(token, new_password):
                 return Response({
                     'success': True,
@@ -602,6 +618,44 @@ class CurrentUserView(APIView):
             # lock states without extra requests.
             from apps.nests.services import EnrollmentService
             data['access_status'] = EnrollmentService.access_status_for(user)
+
+        # Admin role state (plan 18-01) — drives Settings → Account section
+        # AND the first-promotion "land in admin mode" reveal in the
+        # role-switcher. Shown for everyone (mentee, mentor, admin) so the
+        # FE never has to special-case missing keys.
+        from apps.users.models_admin import AdminRoleRequest
+        from apps.users.services.admin_role import first_admin_session_key
+        from django.core.cache import cache
+
+        admin_block = {
+            'eligible': False,
+            'ineligible_reasons': [],
+            'pending_request_id': None,
+            'first_admin_session': False,
+        }
+
+        if user.is_eagle:
+            elig = user.can_request_admin()
+            admin_block['eligible'] = elig['eligible']
+            admin_block['ineligible_reasons'] = elig['reasons']
+
+            pending = (
+                AdminRoleRequest.objects
+                .filter(user=user, status=AdminRoleRequest.Status.PENDING)
+                .only('id')
+                .first()
+            )
+            if pending:
+                admin_block['pending_request_id'] = str(pending.id)
+
+        # Pop the one-shot flag so subsequent /auth/me/ calls return False
+        # — FE only gets the reveal moment once per promotion.
+        cache_key = first_admin_session_key(user.id)
+        if cache.get(cache_key):
+            admin_block['first_admin_session'] = True
+            cache.delete(cache_key)
+
+        data['admin_request'] = admin_block
 
         return Response({
             'success': True,

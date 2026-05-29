@@ -42,13 +42,12 @@ class PointService:
         Returns None if the activity type is disabled or doesn't exist.
         Prevents duplicate awards for the same source_id + activity_type.
         """
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        
-        # Acquire lock on the User row to serialize concurrent point awards
-        # This completely mitigates Race Condition bug #1 (Duplicate Point Transactions)
+        # Acquire SELECT FOR UPDATE lock on the User row to serialize
+        # concurrent point awards (mitigates Race Condition bug #1 —
+        # Duplicate Point Transactions). The fetched row is intentionally
+        # discarded — the side effect (row lock) is the whole point.
         try:
-            _locked_user = User.objects.select_for_update().get(id=user.id)
+            User.objects.select_for_update().filter(pk=user.id).first()
         except User.DoesNotExist:
             pass
 
@@ -224,9 +223,6 @@ class PointService:
             nest_id: Required when scope="nest"
             period: "all", "month", "week"
         """
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-
         qs = PointTransaction.objects.filter(user__role="eaglet")
 
         if scope == "nest" and nest_id:

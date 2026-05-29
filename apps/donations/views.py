@@ -179,15 +179,34 @@ class HubtelPaymentCallbackView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        # TODO: Re-enable signature validation once Hubtel is properly configured
-        # # Validate Hubtel webhook signature
-        # if not self._validate_signature(request):
-        #     logger.warning(
-        #         "Invalid Hubtel webhook signature from IP: %s",
-        #         self._get_client_ip(request)
-        #     )
-        #     # Return 200 to prevent Hubtel retries, but don't process
-        #     return Response({"status": "signature_invalid"}, status=status.HTTP_200_OK)
+        # Hubtel doesn't ship a webhook signature (confirmed with provider).
+        # The endpoint accepts callbacks without HMAC verification — risk
+        # mitigations layered elsewhere:
+        #   * `Donation.hubtel_reference` is the join key; only references
+        #     we issued via /donations/initiate/ will match a row, so a
+        #     forged callback for an unknown reference becomes a no-op.
+        #   * DonationService.process_callback is idempotent (status
+        #     transitions go pending → success/failed, not in reverse).
+        # If Hubtel later publishes a signing key, plug it into
+        # settings.HUBTEL_WEBHOOK_SECRET and the validation path activates.
+        from django.conf import settings as _s
+        secret = getattr(_s, "HUBTEL_WEBHOOK_SECRET", None)
+
+        if secret:
+            if not self._validate_signature(request):
+                logger.warning(
+                    "Invalid Hubtel webhook signature from IP: %s",
+                    self._get_client_ip(request),
+                )
+                return Response(
+                    {"status": "signature_invalid"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+        else:
+            logger.debug(
+                "Hubtel callback accepted without signature (HUBTEL_WEBHOOK_SECRET unset). "
+                "Provider does not currently issue signatures; relying on reference-match + idempotency."
+            )
 
         try:
             donation = DonationService.process_callback(request.data)

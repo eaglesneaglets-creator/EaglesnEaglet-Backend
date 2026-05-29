@@ -1,0 +1,34 @@
+{% extends "emails/base.html" %}
+
+{% block title %}New admin role request{% endblock %}
+
+{% block content %}
+<h2>New admin role request</h2>
+
+<p>
+    <strong>{{ requester_name }}</strong>
+    (<a href="mailto:{{ requester_email }}">{{ requester_email }}</a>)
+    has requested platform-admin privileges.
+</p>
+
+<div class="note-box">
+    <p class="note-box-label">Why they want to administrate</p>
+    <p style="font-style: normal;">{{ reason }}</p>
+</div>
+
+<div class="button-wrapper">
+    <a href="{{ review_url }}" class="button">Review the request</a>
+</div>
+
+<div class="fallback-link">
+    Button not working? Open this link in your browser:<br>
+    <a href="{{ review_url }}">{{ review_url }}</a>
+</div>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #94a3b8;">
+    You're receiving this because you're an admin on Eagles &amp; Eaglets.
+    Review the request in the KYC Portal &rarr; Admin Requests tab.
+</p>
+{% endblock %}

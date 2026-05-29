@@ -1,0 +1,41 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Your admin role has been revoked{% endblock %}
+
+{% block content %}
+<h2>Your admin role has been revoked</h2>
+
+<p>Hi {{ first_name }},</p>
+
+<p>
+    Your platform-admin privileges on Eagles &amp; Eaglets have been
+    removed. Your mentor role, your Nest, and your mentees are
+    unaffected — you'll continue to operate as a mentor without
+    interruption.
+</p>
+
+{% if actor_name and actor_name != first_name %}
+<div class="warning-box">
+    <p>
+        <strong>Action performed by:</strong> {{ actor_name }}
+    </p>
+</div>
+{% endif %}
+
+{% if reason %}
+<div class="note-box">
+    <p class="note-box-label">Reason provided</p>
+    <p>{{ reason }}</p>
+</div>
+{% endif %}
+
+<div class="button-wrapper">
+    <a href="{{ dashboard_url }}" class="button">Go to your dashboard</a>
+</div>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #94a3b8;">
+    If you believe this was a mistake, please contact the admin team.
+</p>
+{% endblock %}

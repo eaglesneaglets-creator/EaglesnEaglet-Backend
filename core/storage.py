@@ -46,6 +46,102 @@ def get_folder(file_type: str) -> str:
     return folders.get(file_type, folders.get('misc', 'eaglesneaglets/misc'))
 
 
+# ─── Validated upload contexts (audit P1 #9) ────────────────────────────────
+# Each "context" maps to an explicit allow-list of MIME types and a size
+# ceiling. Callers MUST pass a context name; the generic `upload_to_cloudinary`
+# stays for backward compat but new code should go through `upload_validated`.
+
+UPLOAD_CONTEXTS = {
+    'content_thumbnail': {
+        'folder': 'content_images',
+        'max_bytes': 5 * 1024 * 1024,
+        'allowed_mime': {'image/jpeg', 'image/png', 'image/webp', 'image/gif'},
+    },
+    # Mentor-uploaded course materials. Videos pushed to /videos/ folder
+    # (Cloudinary auto-routes by resource_type); docs land in /misc/.
+    'content_item': {
+        'folder': 'videos',
+        'max_bytes': 500 * 1024 * 1024,   # 500 MB — videos
+        'allowed_mime': {
+            'video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska',
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        },
+    },
+    'assignment_submission': {
+        'folder': 'misc',
+        'max_bytes': 10 * 1024 * 1024,
+        'allowed_mime': {
+            'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'text/plain',
+        },
+    },
+    'profile_picture': {
+        'folder': 'profile_pictures',
+        'max_bytes': 5 * 1024 * 1024,
+        'allowed_mime': {'image/jpeg', 'image/png', 'image/webp'},
+    },
+    'government_id': {
+        'folder': 'government_ids',
+        'max_bytes': 8 * 1024 * 1024,
+        'allowed_mime': {'image/jpeg', 'image/png', 'application/pdf'},
+    },
+    'recommendation_letter': {
+        'folder': 'recommendations',
+        'max_bytes': 8 * 1024 * 1024,
+        'allowed_mime': {'application/pdf'},
+    },
+    'cv': {
+        'folder': 'cvs',
+        'max_bytes': 8 * 1024 * 1024,
+        'allowed_mime': {
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        },
+    },
+}
+
+
+def upload_validated(file, *, context: str, **kwargs):
+    """Upload with MIME + size validation against a registered context.
+
+    Replaces direct ``upload_to_cloudinary(file, file_type='misc')`` calls
+    where the caller previously trusted whatever the client sent.
+
+    Raises DRFValidationError on missing file, unknown context, oversize,
+    or disallowed MIME.
+    """
+    if not file:
+        raise DRFValidationError({'file': 'A file is required.'})
+    if context not in UPLOAD_CONTEXTS:
+        raise DRFValidationError({'context': f'Unknown upload context: {context!r}'})
+
+    rules = UPLOAD_CONTEXTS[context]
+
+    size = getattr(file, 'size', None)
+    if size is not None and size > rules['max_bytes']:
+        mb_max = rules['max_bytes'] // (1024 * 1024)
+        raise DRFValidationError({'file': f'File too large. Max {mb_max} MB for this upload.'})
+
+    mime = getattr(file, 'content_type', None)
+    if mime and mime not in rules['allowed_mime']:
+        raise DRFValidationError({
+            'file': (
+                f'File type {mime!r} not allowed for this upload. '
+                f'Allowed: {", ".join(sorted(rules["allowed_mime"]))}.'
+            ),
+        })
+
+    return upload_to_cloudinary(file, file_type=rules['folder'], **kwargs)
+
+
 def upload_to_cloudinary(file, file_type: str, **kwargs):
     """
     Upload a file to the correct Cloudinary folder with automatic optimization.
@@ -80,6 +176,11 @@ def upload_to_cloudinary(file, file_type: str, **kwargs):
         'resource_type': resource_type,
         'use_filename': True,
         'unique_filename': True,
+        # Per-attempt socket timeout. Without this the SDK falls back to
+        # urllib3's default (no read timeout), and an SSL EOF mid-upload
+        # leaves the request thread hung while urllib3 quietly retries.
+        # 30s × 3 internal retries = 90s worst case — bounded.
+        'timeout': 30,
     }
 
     # Apply image-specific optimizations on upload
@@ -99,6 +200,18 @@ def upload_to_cloudinary(file, file_type: str, **kwargs):
         logging.getLogger(__name__).error("Cloudinary upload error (%s %s): %s", resource_type, file_type, exc)
         raise DRFValidationError(
             detail={"file": "File upload failed. Please check your connection and try again."}
+        ) from exc
+    except Exception as exc:
+        # SSL/network errors bubble up from urllib3 as bare exceptions —
+        # NOT as CloudinaryError. Without this catch the request thread
+        # holds the connection open for the full retry window and the FE
+        # spinner never resolves. Surface a clean 503-equivalent.
+        import logging
+        logging.getLogger(__name__).error(
+            "Cloudinary network failure (%s %s): %s", resource_type, file_type, exc,
+        )
+        raise DRFValidationError(
+            detail={"file": "Upload service is unreachable right now. Please try again in a moment."}
         ) from exc
 
     public_id = result.get('public_id')

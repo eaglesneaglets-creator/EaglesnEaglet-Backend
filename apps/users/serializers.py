@@ -142,12 +142,13 @@ class UserSerializer(serializers.ModelSerializer):
             'phone_number', 'role', 'status', 'avatar', 'bio',
             'is_email_verified', 'is_phone_verified', 'date_of_birth',
             'profile_visibility',
-            'is_staff', 'is_superuser', 'kyc_status',
+            'is_staff', 'is_superuser', 'is_platform_staff', 'kyc_status',
             'created_at', 'last_login',
         ]
         read_only_fields = [
             'id', 'email', 'role', 'status', 'is_email_verified',
-            'is_phone_verified', 'is_staff', 'is_superuser', 'kyc_status',
+            'is_phone_verified', 'is_staff', 'is_superuser',
+            'is_platform_staff', 'kyc_status',
             'created_at', 'last_login',
         ]
 
@@ -536,6 +537,12 @@ class MentorKYCStep4Serializer(serializers.Serializer):
     code_of_conduct_agreed = serializers.BooleanField()
     statement_of_faith_agreed = serializers.BooleanField()
     digital_signature = serializers.CharField(min_length=3, max_length=200)
+    code_of_conduct_version = serializers.CharField(
+        required=False, allow_blank=True, max_length=40
+    )
+    code_of_conduct_text = serializers.CharField(
+        required=False, allow_blank=True
+    )
 
     def validate(self, attrs):
         """Ensure all consent checkboxes are checked."""
@@ -560,9 +567,12 @@ class MentorKYCStep4Serializer(serializers.Serializer):
         kyc.statement_of_faith_agreed = self.validated_data['statement_of_faith_agreed']
         kyc.digital_signature = self.validated_data['digital_signature']
         kyc.consent_date = timezone.now()
+        kyc.code_of_conduct_version = self.validated_data.get('code_of_conduct_version', '')
+        kyc.code_of_conduct_text = self.validated_data.get('code_of_conduct_text', '')
         kyc.save(update_fields=[
             'background_check_consent', 'code_of_conduct_agreed',
-            'statement_of_faith_agreed', 'digital_signature', 'consent_date'
+            'statement_of_faith_agreed', 'digital_signature', 'consent_date',
+            'code_of_conduct_version', 'code_of_conduct_text'
         ])
         return kyc
 
@@ -584,6 +594,7 @@ class MentorKYCAdminSerializer(serializers.ModelSerializer):
             'recommendation_letter',
             'area_of_expertise', 'current_occupation', 'linkedin_url', 'mentorship_interests',
             'background_check_consent', 'code_of_conduct_agreed', 'statement_of_faith_agreed',
+            'code_of_conduct_version', 'code_of_conduct_text',
             'submitted_at', 'reviewed_at', 'reviewed_by', 'review_notes', 'rejection_reason',
             'created_at', 'updated_at',
         ]
@@ -1152,6 +1163,8 @@ class MentorKYCNewSerializer(serializers.ModelSerializer):
             'profile_description', 'cv', 'linkedin_url',
             # NEW: Specialization
             'mentorship_types',
+            # Mentor Code of Conduct signed record (Phase 21-03)
+            'code_of_conduct_version', 'code_of_conduct_text',
             # Timestamps
             'submitted_at', 'reviewed_at', 'rejection_reason',
             'created_at', 'updated_at',
@@ -1194,6 +1207,12 @@ class MentorKYCNewUpdateSerializer(serializers.Serializer):
         required=False
     )
 
+    # Mentor Code of Conduct — immutable signed-copy capture (Phase 21-03)
+    code_of_conduct_version = serializers.CharField(
+        max_length=40, required=False, allow_blank=True
+    )
+    code_of_conduct_text = serializers.CharField(required=False, allow_blank=True)
+
     def validate_linkedin_url(self, value):
         """Validate LinkedIn URL format."""
         if value and 'linkedin.com' not in value.lower():
@@ -1210,7 +1229,8 @@ class MentorKYCNewUpdateSerializer(serializers.Serializer):
         # Update KYC fields
         for field in ['location', 'national_id_number', 'marital_status',
                       'employment_status', 'profile_description',
-                      'linkedin_url', 'mentorship_types']:
+                      'linkedin_url', 'mentorship_types',
+                      'code_of_conduct_version', 'code_of_conduct_text']:
             if field in self.validated_data:
                 setattr(mentor_kyc, field, self.validated_data[field])
                 kyc_update_fields.append(field)

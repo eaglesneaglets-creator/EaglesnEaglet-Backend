@@ -99,8 +99,18 @@ class ContentModuleViewSet(ViewSet):
         )
 
     def retrieve(self, request, pk=None):
-        """Get module details with items."""
+        """Get module details with items — scoped to the requester's access.
+
+        Access rules:
+          - Admin / superuser: any module.
+          - Module author (created_by): always (drafts visible to creator).
+          - Mentor who owns the nest: always.
+          - Nest member: only if the module is published.
+          - Anyone else: 404 (avoid leaking module existence).
+        """
         from .models import ContentModule
+        from apps.nests.models import NestMembership
+
         try:
             module = ContentModule.objects.select_related(
                 "created_by", "nest"
@@ -110,6 +120,28 @@ class ContentModuleViewSet(ViewSet):
                 {"success": False, "error": {"message": "Module not found."}},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        user = request.user
+        is_admin = user.is_admin or user.is_superuser
+        is_author = module.created_by_id == user.id
+        is_nest_owner = module.nest_id and module.nest.eagle_id == user.id
+        is_nest_member = (
+            module.nest_id
+            and NestMembership.objects.filter(
+                user=user, nest_id=module.nest_id, status="active",
+            ).exists()
+        )
+
+        if is_admin or is_author or is_nest_owner:
+            pass  # full access including drafts
+        elif is_nest_member and module.is_published:
+            pass  # published modules visible to members
+        else:
+            return Response(
+                {"success": False, "error": {"message": "Module not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         return Response(
             {"success": True, "data": ContentModuleDetailSerializer(module).data}
         )
@@ -282,7 +314,22 @@ class AssignmentViewSet(ViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Scope by user's accessible nests so the endpoint can't enumerate
+        # assignments outside their context. Admins see all.
+        user = request.user
         qs = Assignment.objects.all()
+        if not (user.is_admin or user.is_superuser):
+            from apps.nests.models import Nest, NestMembership
+            owned_nest_ids = list(
+                Nest.objects.filter(eagle=user).values_list("id", flat=True)
+            )
+            member_nest_ids = list(
+                NestMembership.objects.filter(user=user, status="active")
+                .values_list("nest_id", flat=True)
+            )
+            accessible_nest_ids = set(owned_nest_ids) | set(member_nest_ids)
+            qs = qs.filter(nest_id__in=accessible_nest_ids)
+
         if nest_id:
             qs = qs.filter(nest_id=nest_id)
         if module_id:
@@ -293,12 +340,48 @@ class AssignmentViewSet(ViewSet):
         serializer = AssignmentSerializer(qs, many=True, context={"request": request})
         return Response({"success": True, "data": serializer.data})
 
+    def _user_can_view_assignment(self, user, assignment) -> bool:
+        """Object-level access for retrieve.
+
+        Admin and superusers see everything. Mentors see assignments in
+        their own nests. Mentees see assignments in nests they have an
+        ACTIVE membership in (which also implies an active program for
+        their HasActiveProgram-gated routes).
+        """
+        if user.is_admin or user.is_superuser:
+            return True
+        if assignment.nest_id is None:
+            return False
+        if user.role == "eagle" and assignment.nest.eagle_id == user.id:
+            return True
+        from apps.nests.models import NestMembership
+        return NestMembership.objects.filter(
+            user=user,
+            nest_id=assignment.nest_id,
+            status="active",
+        ).exists()
+
+    def _user_can_modify_assignment(self, user, assignment) -> bool:
+        """Object-level access for write. Only the owning mentor or an admin."""
+        if user.is_admin or user.is_superuser:
+            return True
+        if assignment.nest_id is None:
+            return False
+        return user.role == "eagle" and assignment.nest.eagle_id == user.id
+
     def retrieve(self, request, pk=None):
-        """Get a single assignment."""
+        """Get a single assignment — scoped to the requester's accessible nests."""
         from .models import Assignment
         try:
-            assignment = Assignment.objects.get(pk=pk)
+            assignment = Assignment.objects.select_related("nest").get(pk=pk)
         except Assignment.DoesNotExist:
+            return Response(
+                {"success": False, "error": {"message": "Assignment not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if not self._user_can_view_assignment(request.user, assignment):
+            # 404 (not 403) to avoid leaking existence of assignments in
+            # nests the user has no access to.
             return Response(
                 {"success": False, "error": {"message": "Assignment not found."}},
                 status=status.HTTP_404_NOT_FOUND,
@@ -306,14 +389,19 @@ class AssignmentViewSet(ViewSet):
         return Response({"success": True, "data": AssignmentSerializer(assignment, context={"request": request}).data})
 
     def partial_update(self, request, pk=None):
-        """Update an assignment (Eagle only)."""
+        """Update an assignment — only the owning mentor or an admin may patch."""
         from .models import Assignment
         try:
-            assignment = Assignment.objects.get(pk=pk)
+            assignment = Assignment.objects.select_related("nest").get(pk=pk)
         except Assignment.DoesNotExist:
             return Response(
                 {"success": False, "error": {"message": "Assignment not found."}},
                 status=status.HTTP_404_NOT_FOUND,
+            )
+        if not self._user_can_modify_assignment(request.user, assignment):
+            return Response(
+                {"success": False, "error": {"message": "You do not have permission to edit this assignment."}},
+                status=status.HTTP_403_FORBIDDEN,
             )
         serializer = AssignmentSerializer(assignment, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -349,9 +437,9 @@ class AssignmentViewSet(ViewSet):
         if not file:
             raise ValidationError({"file": "A file is required to submit this assignment."})
 
-        # Upload to Cloudinary and get the secure URL
-        from core.storage import upload_to_cloudinary
-        result = upload_to_cloudinary(file, file_type="misc")
+        # Validated upload — MIME + size gated per audit P1 #9.
+        from core.storage import upload_validated
+        result = upload_validated(file, context="assignment_submission")
         file_url = result.get("secure_url") or result.get("url")
 
         submission = ProgressService.submit_assignment(

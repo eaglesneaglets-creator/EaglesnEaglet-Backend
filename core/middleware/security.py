@@ -156,7 +156,7 @@ class SQLInjectionProtectionMiddleware:
         for pattern in self.compiled_patterns:
             if pattern.search(query_string):
                 logger.warning(
-                    f'Potential SQL injection attempt detected',
+                    'Potential SQL injection attempt detected',
                     extra={
                         'ip': get_client_ip(request),
                         'path': request.path,

@@ -1,0 +1,44 @@
+{% extends "emails/base.html" %}
+
+{% block title %}You're now an admin{% endblock %}
+
+{% block content %}
+<h2>You're now an admin 🎉</h2>
+
+<p>Hi {{ first_name }},</p>
+
+<p>
+    Your request to join the admin team on Eagles &amp; Eaglets has been
+    approved. You now have platform-admin privileges in addition to your
+    existing mentor role.
+</p>
+
+<div class="info-box">
+    <p>
+        <strong>How to access admin tools:</strong><br>
+        Open the sidebar profile pill and switch to <em>Administrator</em>
+        view. Your Nest and mentees remain unaffected — you can flip
+        between mentor and admin context at any time.
+    </p>
+</div>
+
+<div class="button-wrapper">
+    <a href="{{ dashboard_url }}" class="button">Go to admin dashboard</a>
+</div>
+
+{% if note %}
+<div class="note-box">
+    <p class="note-box-label">Note from the team</p>
+    <p>{{ note }}</p>
+</div>
+{% endif %}
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #94a3b8;">
+    Welcome to the team. With great access comes great responsibility —
+    please review the
+    <a href="{{ guidelines_url }}">admin guidelines</a> if this is your
+    first time.
+</p>
+{% endblock %}
