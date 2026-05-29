@@ -1,0 +1,37 @@
+{% extends "emails/base.html" %}
+
+{% block title %}About your admin role request{% endblock %}
+
+{% block content %}
+<h2>An update on your admin role request</h2>
+
+<p>Hi {{ first_name }},</p>
+
+<p>
+    Thank you for your interest in joining the Eagles &amp; Eaglets admin
+    team. After review, the team has decided not to move forward with your
+    request at this time.
+</p>
+
+<div class="note-box">
+    <p class="note-box-label">Reviewer note</p>
+    <p>{{ note }}</p>
+</div>
+
+<p>
+    This decision doesn't change your mentor role or your work in your
+    Nest. You're welcome to submit a fresh request in the future as your
+    track record grows on the platform.
+</p>
+
+<div class="button-wrapper">
+    <a href="{{ settings_url }}" class="button secondary">Open settings</a>
+</div>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #94a3b8;">
+    Questions about this decision? Reply to this email and the admin team
+    will follow up.
+</p>
+{% endblock %}

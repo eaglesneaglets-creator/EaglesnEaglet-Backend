@@ -1,0 +1,33 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Thank you for your donation{% endblock %}
+
+{% block content %}
+<h2>Thank you, {{ donor_name }} 💚</h2>
+
+<p>
+    Your donation has been received. Your support keeps our mentorship
+    programs running and helps the next generation of leaders take flight.
+</p>
+
+<div class="info-box">
+    <p>
+        <strong>Amount:</strong> {{ currency }} {{ amount }}<br>
+        <strong>Campaign:</strong> {{ campaign_title }}<br>
+        <strong>Reference:</strong> {{ reference }}
+    </p>
+</div>
+
+{% if campaign_url %}
+<div class="button-wrapper">
+    <a href="{{ campaign_url }}" class="button">See campaign progress</a>
+</div>
+{% endif %}
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #94a3b8;">
+    Keep this email as your receipt. If you have questions about your
+    donation, reach out to us — we're happy to help.
+</p>
+{% endblock %}

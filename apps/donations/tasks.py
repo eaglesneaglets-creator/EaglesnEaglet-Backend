@@ -3,6 +3,7 @@ Donation Celery Tasks
 
 Async tasks triggered after successful donations.
 All imports are lazy to avoid AppRegistryNotReady errors.
+Emails use the shared themed templates under templates/emails/.
 """
 
 import logging
@@ -12,12 +13,46 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 
+def _frontend_url() -> str:
+    from django.conf import settings
+    return getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")
+
+
+def _support_email() -> str:
+    from django.conf import settings
+    return (
+        getattr(settings, "SUPPORT_EMAIL", None)
+        or getattr(settings, "DEFAULT_FROM_EMAIL", "support@eaglesneaglets.com")
+    )
+
+
+def _send_themed(*, subject: str, template: str, context: dict, recipient: str) -> None:
+    """Render the themed template and send via Django's mail backend."""
+    from django.conf import settings
+    from django.core.mail import send_mail
+    from django.template.loader import render_to_string
+    from django.utils.html import strip_tags
+
+    ctx = {
+        "support_email": _support_email(),
+        "frontend_url": _frontend_url(),
+        **context,
+    }
+    html_message = render_to_string(template, ctx)
+    text_message = strip_tags(html_message)
+    send_mail(
+        subject=subject,
+        message=text_message,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[recipient],
+        html_message=html_message,
+        fail_silently=False,
+    )
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_donation_confirmation_email(self, donation_id: str):
-    """
-    Send a confirmation email to the donor after a successful donation.
-    Retries up to 3 times with 60-second delays on failure.
-    """
+    """Send a themed confirmation email to the donor after a successful donation."""
     try:
         from .models import Donation
 
@@ -30,33 +65,23 @@ def send_donation_confirmation_email(self, donation_id: str):
             logger.info("Skipping confirmation email — donation %s is not SUCCESS", donation_id)
             return
 
-        # Use Django's email backend (configured in settings)
-        from django.core.mail import send_mail
-        from django.conf import settings
-
-        recipient_email = (
-            donation.donor.email if donation.donor else None
-        )
+        recipient_email = donation.donor.email if donation.donor else None
         if not recipient_email:
             logger.info("No email for donation %s — skipping confirmation email", donation_id)
             return
 
-        subject = f"Thank you for your donation to {donation.campaign.title}!"
-        message = (
-            f"Dear {donation.donor_name},\n\n"
-            f"Your donation of {donation.currency} {donation.amount} to "
-            f'"{donation.campaign.title}" has been received.\n\n'
-            f"Reference: {donation.hubtel_reference}\n\n"
-            f"Thank you for your generosity!\n\n"
-            f"Eagles & Eaglets Team"
-        )
-
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[recipient_email],
-            fail_silently=False,
+        _send_themed(
+            subject=f"Thank you for your donation to {donation.campaign.title}",
+            template="emails/donation_confirmation.html",
+            context={
+                "donor_name": donation.donor_name,
+                "amount": donation.amount,
+                "currency": donation.currency,
+                "campaign_title": donation.campaign.title,
+                "reference": donation.hubtel_reference,
+                "campaign_url": f"{_frontend_url()}/donations/{donation.campaign_id}",
+            },
+            recipient=recipient_email,
         )
 
         logger.info("Confirmation email sent for donation %s to %s", donation_id, recipient_email)
@@ -68,32 +93,25 @@ def send_donation_confirmation_email(self, donation_id: str):
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=120)
 def send_campaign_milestone_alert(self, campaign_id: str, milestone_pct: int):
-    """
-    Notify the campaign creator when a milestone (25%, 50%, 75%, 100%) is reached.
-    """
+    """Notify the campaign creator when a milestone (25/50/75/100%) is reached."""
     try:
         from .models import Campaign
-        from django.core.mail import send_mail
-        from django.conf import settings
 
         campaign = Campaign.objects.select_related("created_by").get(id=campaign_id)
         creator_email = campaign.created_by.email
 
-        subject = f"🎉 {milestone_pct}% milestone reached for '{campaign.title}'!"
-        message = (
-            f"Great news!\n\n"
-            f"Your campaign \"{campaign.title}\" has reached {milestone_pct}% of its goal.\n\n"
-            f"Current amount: {campaign.currency} {campaign.current_amount}\n"
-            f"Goal: {campaign.currency} {campaign.goal_amount}\n\n"
-            f"Keep up the great work!\n\nEagles & Eaglets Team"
-        )
-
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[creator_email],
-            fail_silently=False,
+        _send_themed(
+            subject=f"🎉 {milestone_pct}% milestone reached for '{campaign.title}'",
+            template="emails/campaign_milestone.html",
+            context={
+                "milestone_pct": milestone_pct,
+                "campaign_title": campaign.title,
+                "current_amount": campaign.current_amount,
+                "goal_amount": campaign.goal_amount,
+                "currency": campaign.currency,
+                "campaign_url": f"{_frontend_url()}/donations/{campaign.id}",
+            },
+            recipient=creator_email,
         )
 
         logger.info(

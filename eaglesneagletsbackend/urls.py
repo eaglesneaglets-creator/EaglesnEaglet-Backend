@@ -9,7 +9,7 @@ from django.http import JsonResponse
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from core.views import enums_view
+from core.views import cloudinary_sign_view, enums_view
 
 
 def health_check(request):
@@ -62,8 +62,16 @@ api_v1_patterns = [
     # Enum registry (phase 17-01) — single source of truth for FE status enums + UI groupings
     path('enums/', enums_view, name='enums'),
 
+    # Direct-to-Cloudinary upload signing (Phase A — direct uploads).
+    # Frontend uploads files straight to Cloudinary using the params
+    # returned here; BE never touches the file bytes.
+    path('uploads/sign/', cloudinary_sign_view, name='cloudinary-sign'),
+
     # Authentication
     path('auth/', include('apps.users.urls')),
+
+    # Admin Role Management (plan 18-01) — EOI + invite + revocation + audit
+    path('admin-role/', include('apps.users.urls_admin')),
 
     # Core app URLs
     path('nests/', include('apps.nests.urls')),

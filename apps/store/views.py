@@ -291,8 +291,14 @@ class AdminOrderViewSet(ViewSet):
                 Q(guest_email__icontains=search)
             )
 
-        page_size = min(int(request.query_params.get("page_size", 20)), 100)
-        page_num = max(int(request.query_params.get("page", 1)), 1)
+        def _safe_int(raw, default):
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return default
+
+        page_size = min(max(_safe_int(request.query_params.get("page_size", 20), 20), 1), 100)
+        page_num = max(_safe_int(request.query_params.get("page", 1), 1), 1)
         paginator = Paginator(qs, page_size)
         page = paginator.get_page(page_num)
 

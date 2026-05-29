@@ -1,9 +1,12 @@
 """
-Tests for ProgressService — 50% gate, resource gate, and module completion.
+Tests for ProgressService — completion behavior, resource gate, and module completion.
+
+Note: the 50%-of-duration video watch-time fraud cap was removed at user
+request. 100% reported by the client completes the item regardless of
+watch_duration_seconds.
 """
 
 import pytest
-from rest_framework.exceptions import ValidationError
 
 from apps.content.services import ProgressService
 from apps.content.models import ContentProgress
@@ -11,31 +14,29 @@ from apps.content.models import ContentProgress
 pytestmark = pytest.mark.django_db
 
 
-class TestVideo50PercentGate:
-    def test_video_blocked_completion_below_50_percent_watch_time(
+class TestUpdateProgress:
+    def test_video_completes_regardless_of_watch_time(
         self, eaglet_user, content_item_factory, nest, content_module_factory, eagle_user, nest_membership
     ):
+        """100% from client completes the item — no min-watch fraud cap."""
         module = content_module_factory(nest=nest, created_by=eagle_user)
-        # 10 minute video; 50% = 300 seconds minimum watch required
         item = content_item_factory(module=module, content_type="video", duration_minutes=10)
 
-        # Watch only 100 seconds (< 50% of 600s = 300s)
         progress = ProgressService.update_progress(
-            eaglet_user, str(item.id), 100.0, watch_duration_seconds=100
+            eaglet_user, str(item.id), 100.0, watch_duration_seconds=5,
         )
-        # Should be capped at 99% — not completed
-        assert progress.progress_percentage < 100.0
-        assert progress.status != "completed"
+        assert progress.progress_percentage == 100.0
+        assert progress.status == "completed"
 
-    def test_video_completes_at_50_percent_watch_time(
-        self, eaglet_user, content_item_factory, nest, content_module_factory, eagle_user, nest_membership
+    def test_global_module_progress_works_without_nest_membership(
+        self, eaglet_user, content_item_factory, content_module_factory, eagle_user
     ):
-        module = content_module_factory(nest=nest, created_by=eagle_user)
-        item = content_item_factory(module=module, content_type="video", duration_minutes=10)
+        """Mark-as-complete on a global (nest=None) module no longer 403s."""
+        module = content_module_factory(nest=None, created_by=eagle_user)
+        item = content_item_factory(module=module, content_type="document")
 
-        # Watch 300 seconds (50% of 600s)
         progress = ProgressService.update_progress(
-            eaglet_user, str(item.id), 100.0, watch_duration_seconds=300
+            eaglet_user, str(item.id), 100.0,
         )
         assert progress.status == "completed"
 

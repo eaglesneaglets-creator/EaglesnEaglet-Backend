@@ -27,7 +27,36 @@ class DonationService:
 
     @staticmethod
     def list_active_campaigns():
-        return Campaign.objects.filter(is_active=True).select_related("created_by")
+        """List active campaigns with annotated count + prefetched recent donors
+        so the serializer's `donation_count` + `recent_donors` method fields
+        don't fire N+1 queries (audit perf hotspot fix).
+        """
+        from django.db.models import Count, Q, Prefetch
+        from .models import Donation
+
+        recent_donors_qs = (
+            Donation.objects
+            .filter(status=Donation.Status.SUCCESS)
+            .order_by("-created_at")
+        )
+        return (
+            Campaign.objects
+            .filter(is_active=True)
+            .select_related("created_by")
+            .annotate(
+                donation_count=Count(
+                    "donations",
+                    filter=Q(donations__status=Donation.Status.SUCCESS),
+                ),
+            )
+            .prefetch_related(
+                Prefetch(
+                    "donations",
+                    queryset=recent_donors_qs,
+                    to_attr="_prefetched_success_donations",
+                ),
+            )
+        )
 
     @staticmethod
     def get_campaign(campaign_id: str) -> Campaign:

@@ -588,8 +588,10 @@ class TestHubtelCallback:
         campaign.refresh_from_db()
         assert campaign.current_amount == pending_donation.amount
 
-    def test_callback_missing_reference_returns_200(self, api_client):
-        """Hubtel must always get 200, even for malformed payloads."""
+    @patch("apps.donations.views.HubtelPaymentCallbackView._validate_signature", return_value=True)
+    def test_callback_missing_reference_returns_200(self, mock_sig, api_client):
+        """Once the signature passes, malformed payloads should still ack
+        with 200 so Hubtel doesn't retry on our internal errors."""
         response = api_client.post(
             "/api/v1/donations/callback/payment/",
             {"Status": "Success"},

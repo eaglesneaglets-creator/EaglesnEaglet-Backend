@@ -15,6 +15,7 @@ from django.db.models import F
 from django.utils import timezone
 from django.core.validators import RegexValidator
 from core.mixins.timestamp import TimestampMixin
+from core.fields import EncryptedCharField
 from core.validators import validate_phone_number
 from .validators import (
     validate_cv_file,
@@ -152,6 +153,15 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
+    # Platform admin role (plan 18-01). Stacks on top of `role` so an
+    # Eagle mentor can also have platform-admin privileges without losing
+    # their Nest, mentees, or program enrollments. Granted via the
+    # AdminRoleRequest / AdminInvite flow; revocable via the same surface.
+    is_platform_staff = models.BooleanField(
+        default=False,
+        help_text='Whether the user has elevated platform-admin privileges.',
+    )
+
     # Security fields
     failed_login_attempts = models.PositiveIntegerField(default=0)
     last_failed_login = models.DateTimeField(null=True, blank=True)
@@ -218,7 +228,66 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
 
     @property
     def is_admin(self):
-        return self.role == self.Role.ADMIN or self.is_superuser
+        # Three paths into admin privileges:
+        #   - legacy seed admins with role='admin'
+        #   - Django superusers
+        #   - stacked mentors granted via the AdminRoleRequest flow (plan 18)
+        return (
+            self.role == self.Role.ADMIN
+            or self.is_superuser
+            or self.is_platform_staff
+        )
+
+    @property
+    def is_stacked_admin(self):
+        """True when an Eagle mentor also holds platform-admin privileges."""
+        return self.role == self.Role.EAGLE and self.is_platform_staff
+
+    def can_request_admin(self):
+        """
+        Eligibility check for the self-service Admin Role EOI (plan 18-01).
+
+        Returns ``{"eligible": bool, "reasons": [str]}``.
+        Empty `reasons` ⇒ eligible.
+        """
+        from datetime import timedelta
+        reasons = []
+
+        if self.role != self.Role.EAGLE:
+            reasons.append('Admin role is only available to approved mentors.')
+            # Short-circuit — the remaining checks assume mentor context.
+            return {'eligible': False, 'reasons': reasons}
+
+        if not self.is_active:
+            reasons.append('Your account is currently suspended.')
+
+        kyc = getattr(self, 'mentor_kyc', None)
+        if kyc is None or kyc.status != 'approved':
+            reasons.append('Your mentor profile must be KYC-approved first.')
+        elif kyc.reviewed_at is None:
+            reasons.append('Your mentor profile must be KYC-approved first.')
+        else:
+            days_since_approval = (timezone.now() - kyc.reviewed_at).days
+            if days_since_approval < 30:
+                reasons.append(
+                    f'You must be an approved mentor for at least 30 days. '
+                    f'You have been approved for {days_since_approval} day'
+                    f'{"" if days_since_approval == 1 else "s"}.'
+                )
+
+        if self.is_platform_staff:
+            reasons.append('You already hold admin privileges.')
+
+        # AdminRoleRequest is available via the module-level re-export
+        # at the bottom of this file — no local import needed.
+        has_pending = AdminRoleRequest.objects.filter(
+            user=self,
+            status=AdminRoleRequest.Status.PENDING,
+        ).exists()
+        if has_pending:
+            reasons.append('You already have a pending admin request.')
+
+        return {'eligible': not reasons, 'reasons': reasons}
 
     @property
     def is_account_locked(self):
@@ -510,11 +579,10 @@ class MentorKYC(TimestampMixin):
         blank=True,
         help_text='City/Country location'
     )
-    national_id_number = models.CharField(
-        max_length=50,
+    national_id_number = EncryptedCharField(
         blank=True,
         validators=[validate_national_id],
-        help_text='National ID number for KYC verification'
+        help_text='National ID number for KYC verification (encrypted at rest)'
     )
     marital_status = models.CharField(
         max_length=20,
@@ -640,6 +708,15 @@ class MentorKYC(TimestampMixin):
         null=True,
         blank=True,
         help_text='Date when consent was given'
+    )
+    code_of_conduct_version = models.CharField(
+        max_length=40,
+        blank=True,
+        help_text='Version of the Mentor Code of Conduct the mentor agreed to'
+    )
+    code_of_conduct_text = models.TextField(
+        blank=True,
+        help_text='Immutable plain-text snapshot of the Mentor Code of Conduct as agreed at sign time'
     )
 
     # =========================================================================
@@ -968,11 +1045,10 @@ class MenteeKYC(TimestampMixin):
         max_length=500,
         help_text='Cloudinary secure_url of the profile picture'
     )
-    national_id_number = models.CharField(
-        max_length=50,
+    national_id_number = EncryptedCharField(
         blank=True,
         validators=[validate_national_id],
-        help_text='National ID number for KYC verification'
+        help_text='National ID number for KYC verification (encrypted at rest)'
     )
     marital_status = models.CharField(
         max_length=20,
@@ -1242,3 +1318,13 @@ class EmailChangeRequest(TimestampMixin):
 
     def __str__(self) -> str:
         return f"EmailChangeRequest(user={self.user_id}, new={self.new_email}, valid={self.is_valid})"
+
+
+# ─── Admin role management (plan 18-01) ──────────────────────────────────────
+# Re-export so Django auto-discovers the models and existing imports keep
+# working (`from apps.users.models import AdminRoleRequest`).
+from .models_admin import (  # noqa: E402,F401
+    AdminInvite,
+    AdminRoleAudit,
+    AdminRoleRequest,
+)

@@ -1,0 +1,40 @@
+{% extends "emails/base.html" %}
+
+{% block title %}You're invited to administrate{% endblock %}
+
+{% block content %}
+<h2>You're invited to administrate Eagles &amp; Eaglets</h2>
+
+<p>
+    {% if inviter_name %}{{ inviter_name }}{% else %}An existing admin{% endif %}
+    has invited you to join the admin team on Eagles &amp; Eaglets.
+</p>
+
+<p>
+    As an admin, you'll help review mentor and mentee applications, manage
+    the platform, and support the community.
+</p>
+
+<div class="button-wrapper">
+    <a href="{{ accept_url }}" class="button">Accept invitation</a>
+</div>
+
+<div class="fallback-link">
+    Button not working? Paste this link into your browser:<br>
+    <a href="{{ accept_url }}">{{ accept_url }}</a>
+</div>
+
+{% if personal_message %}
+<div class="note-box">
+    <p class="note-box-label">Personal note</p>
+    <p>{{ personal_message }}</p>
+</div>
+{% endif %}
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #94a3b8;">
+    This invitation expires on <strong>{{ expires_at|date:"F j, Y" }}</strong>.
+    If you weren't expecting this email, you can safely ignore it.
+</p>
+{% endblock %}

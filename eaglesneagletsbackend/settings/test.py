@@ -13,6 +13,11 @@ DEBUG = False
 
 ALLOWED_HOSTS = ['testserver', 'localhost', '127.0.0.1']
 
+# Hubtel doesn't ship a signature, so HUBTEL_WEBHOOK_SECRET is unset by
+# default. The few legacy tests that mock _validate_signature still
+# behave correctly because the view's `if secret:` branch is skipped.
+# HUBTEL_WEBHOOK_SECRET = ""
+
 
 # Use SQLite for faster tests (or in-memory PostgreSQL)
 DATABASES = {

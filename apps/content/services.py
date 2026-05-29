@@ -394,21 +394,38 @@ class ProgressService:
         except ContentItem.DoesNotExist:
             raise NotFound("Content item not found.")
 
-        # Verify membership
-        if not NestMembership.objects.filter(
-            nest=item.module.nest, user=user, status="active"
-        ).exists():
-            raise PermissionDenied("You must be a Nest member to track progress.")
+        # Access gate. Anyone allowed to *see* the content should be allowed
+        # to record progress on it. Allow when ANY of:
+        #   • module has no nest (global / Resource Center / admin-created)
+        #   • module is published with platform-wide visibility
+        #   • user owns the module (mentor authoring their own course)
+        #   • user is an active member of the module's nest
+        # The previous gate only honored the last case, which silently
+        # rejected progress on global modules — "Mark as Complete" looked
+        # broken because every PATCH 403'd.
+        module = item.module
+        nest = module.nest
+        allowed = (
+            nest is None
+            or (module.is_published and module.visibility == "all_mentees")
+            or module.created_by_id == user.id
+            or NestMembership.objects.filter(
+                nest=nest, user=user, status="active",
+            ).exists()
+        )
+        if not allowed:
+            raise PermissionDenied("You don't have access to this content.")
 
         progress, created = ContentProgress.objects.get_or_create(
             user=user, content_item=item,
             defaults={"started_at": timezone.now()},
         )
-        
+
         # Serialize access by locking the row for this transaction
         progress = ContentProgress.objects.select_for_update().get(id=progress.id)
 
-        # Fraud prevention: progress can only increase
+        # Progress can only increase — keep this guard; it's not fraud
+        # prevention, just sane state-machine hygiene.
         if progress.status == "completed":
             return progress
 
@@ -419,21 +436,9 @@ class ProgressService:
             progress.watch_duration_seconds, watch_duration_seconds
         )
 
-        # Fraud prevention: videos require minimum watch time (50% of duration)
-        if (
-            item.content_type == "video"
-            and progress.progress_percentage >= 100.0
-            and item.duration_minutes > 0
-        ):
-            min_seconds = int(item.duration_minutes * 60 * 0.5)
-            if progress.watch_duration_seconds < min_seconds:
-                logger.warning(
-                    "Fraud blocked: user=%s item=%s watched %ds of required %ds",
-                    user.email, item.id, progress.watch_duration_seconds, min_seconds,
-                )
-                progress.progress_percentage = min(
-                    progress.progress_percentage, 99.0
-                )
+        # NOTE: the 50%-of-duration video watch-time fraud check was removed
+        # at user request. Trust the client signal; auto-award still requires
+        # the explicit Mark-as-Complete click or `ended` event.
 
         if progress.progress_percentage >= 100.0 and progress.status != "completed":
             progress.status = ContentProgress.Status.COMPLETED
@@ -491,25 +496,64 @@ class ProgressService:
         completed_assignments = len(completed_assignment_ids)
 
         total_modules = visible_modules.count()
-        
-        # Calculate modules completed (all required items done AND any associated assignments submitted)
+
+        # ── Modules-completed in a single pass (audit perf hotspot fix) ──
+        # Previous version called ProgressService.get_module_completion_percentage
+        # once per module + queried module.assignments per iteration, producing
+        # an N+1 of ~4 queries per module. New version pre-aggregates everything
+        # with three queries total, regardless of module count.
+        from django.db.models import Count
+
+        module_ids = list(visible_modules.values_list("id", flat=True))
+
+        # Required-item counts per module
+        required_per_module = dict(
+            ContentItem.objects
+            .filter(module_id__in=module_ids, is_required=True)
+            .values_list("module_id")
+            .annotate(c=Count("id"))
+            .values_list("module_id", "c")
+        )
+
+        # User's completed-required counts per module
+        completed_per_module = dict(
+            ContentProgress.objects
+            .filter(
+                user=user,
+                content_item__module_id__in=module_ids,
+                content_item__is_required=True,
+                status="completed",
+            )
+            .values_list("content_item__module_id")
+            .annotate(c=Count("id"))
+            .values_list("content_item__module_id", "c")
+        )
+
+        # Assignments grouped by module — we only need the set per module
+        # to test against `completed_assignment_ids`.
+        assignments_by_module = {}
+        for asg_id, mod_id in (
+            Assignment.objects
+            .filter(module_id__in=module_ids)
+            .values_list("id", "module_id")
+        ):
+            assignments_by_module.setdefault(mod_id, set()).add(asg_id)
+
         modules_completed = 0
-        for module in visible_modules:
-            module_assignments = module.assignments.all()
-            has_assignment = module_assignments.exists()
-            
-            # Basic item completion
-            item_completion = ProgressService.get_module_completion_percentage(user, module.id)
-            
-            if item_completion >= 100.0:
-                if has_assignment:
-                    # Must also have submitted at least one assignment in this module
-                    asg_ids = set(module_assignments.values_list("id", flat=True))
-                    if asg_ids.intersection(completed_assignment_ids):
-                        modules_completed += 1
-                else:
+        for mod_id in module_ids:
+            required = required_per_module.get(mod_id, 0)
+            completed = completed_per_module.get(mod_id, 0)
+            # 100% item completion (or no required items at all)
+            item_done = required == 0 or completed >= required
+            if not item_done:
+                continue
+            module_asg_ids = assignments_by_module.get(mod_id, set())
+            if module_asg_ids:
+                if module_asg_ids & completed_assignment_ids:
                     modules_completed += 1
-                
+            else:
+                modules_completed += 1
+
         avg_prog = qs.aggregate(avg=Avg("progress_percentage"))["avg"] or 0
 
         return {

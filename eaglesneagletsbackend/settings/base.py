@@ -261,6 +261,11 @@ HUBTEL_SMS_SENDER_ID = os.environ.get('HUBTEL_SMS_SENDER_ID', 'EaglesNest')
 # Public URL of this backend (used for Hubtel callback URLs)
 BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:8000')
 
+# Field-level encryption key (Fernet) for sensitive PII at rest (KYC national IDs).
+# Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# If unset, EncryptedCharField stores plaintext (acceptable for local dev only).
+ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', '')
+
 
 # File Upload Settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB

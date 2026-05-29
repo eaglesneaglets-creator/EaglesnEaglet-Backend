@@ -101,12 +101,24 @@ class CampaignDetailSerializer(serializers.ModelSerializer):
         return obj.created_by.full_name or obj.created_by.email
 
     def get_recent_donors(self, obj: Campaign):
-        recent = obj.donations.filter(
-            status=Donation.Status.SUCCESS
-        ).order_by("-created_at")[:5]
+        # Use the prefetched bucket from DonationService.list_active_campaigns
+        # when available — avoids N+1 on list endpoints. Falls back to a live
+        # query for detail views and ad-hoc callers.
+        cached = getattr(obj, "_prefetched_success_donations", None)
+        if cached is not None:
+            recent = list(cached)[:5]
+        else:
+            recent = obj.donations.filter(
+                status=Donation.Status.SUCCESS
+            ).order_by("-created_at")[:5]
         return RecentDonorSerializer(recent, many=True).data
 
     def get_donation_count(self, obj: Campaign) -> int:
+        # Prefer annotated value (set by DonationService.list_active_campaigns)
+        # to avoid an extra COUNT per row on list endpoints.
+        annotated = getattr(obj, "donation_count", None)
+        if annotated is not None:
+            return annotated
         return obj.donations.filter(status=Donation.Status.SUCCESS).count()
 
 

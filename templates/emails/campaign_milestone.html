@@ -1,0 +1,30 @@
+{% extends "emails/base.html" %}
+
+{% block title %}{{ milestone_pct }}% milestone reached!{% endblock %}
+
+{% block content %}
+<h2>🎉 {{ milestone_pct }}% milestone reached</h2>
+
+<p>Great news! Your campaign has crossed an important milestone:</p>
+
+<div class="info-box">
+    <p>
+        <strong>Campaign:</strong> {{ campaign_title }}<br>
+        <strong>Raised:</strong> {{ currency }} {{ current_amount }}<br>
+        <strong>Goal:</strong> {{ currency }} {{ goal_amount }}<br>
+        <strong>Progress:</strong> {{ milestone_pct }}%
+    </p>
+</div>
+
+{% if campaign_url %}
+<div class="button-wrapper">
+    <a href="{{ campaign_url }}" class="button">Open campaign</a>
+</div>
+{% endif %}
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #94a3b8;">
+    Share your campaign link with your network to push toward the next milestone.
+</p>
+{% endblock %}
