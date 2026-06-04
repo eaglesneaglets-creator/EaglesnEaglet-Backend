@@ -216,12 +216,6 @@ class MentorshipRequestSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class MentorshipRequestCreateSerializer(serializers.Serializer):
-    """Serializer for creating a mentorship request."""
-
-    message = serializers.CharField(required=False, allow_blank=True, max_length=1000)
-
-
 # ---------------------------------------------------------------------------
 # Nest Post & Comment
 # ---------------------------------------------------------------------------

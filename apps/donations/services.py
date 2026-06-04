@@ -14,7 +14,7 @@ from django.db import models, transaction
 from rest_framework.exceptions import NotFound, ValidationError
 
 from .hubtel import HubtelClient, HubtelSMSClient
-from .models import Campaign, Donation, RecurringDonation
+from .models import Campaign, Donation
 
 logger = logging.getLogger(__name__)
 
@@ -302,7 +302,7 @@ class DonationService:
     @staticmethod
     def get_admin_stats() -> dict:
         """Aggregate stats for the admin analytics dashboard."""
-        from django.db.models import Count, Sum
+        from django.db.models import Sum
         from django.utils import timezone
 
         successful = Donation.objects.filter(status=Donation.Status.SUCCESS)

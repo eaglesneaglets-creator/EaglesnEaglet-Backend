@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSet
 
 from core.pagination import StandardResultsSetPagination
-from core.permissions import IsEagle, IsEagleOrAdmin, IsNestMember, IsNestOwnerFromURL
+from core.permissions import IsEagleOrAdmin, IsNestMember, IsNestOwnerFromURL
 
 from .serializers import (
     NestListSerializer,
@@ -22,7 +22,6 @@ from .serializers import (
     NestCreateSerializer,
     MembershipSerializer,
     MentorshipRequestSerializer,
-    MentorshipRequestCreateSerializer,
     NestPostSerializer,
     NestPostCreateSerializer,
     NestResourceSerializer,
@@ -610,7 +609,6 @@ class ProgramObjectiveRuleViewSet(ModelViewSet):
 # ===========================================================================
 
 from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from .models_program import ProgramEnrollment, ProgramExitRequest
 from .permissions import IsEnrollmentParticipant
@@ -625,9 +623,6 @@ from .serializers import (
 from .services import (
     EnrollmentService,
     EnrollmentError,
-    AlreadyEnrolled,
-    NoActiveProgram,
-    InvalidTransition,
 )
 
 

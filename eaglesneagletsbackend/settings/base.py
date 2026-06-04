@@ -266,6 +266,13 @@ BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:8000')
 # If unset, EncryptedCharField stores plaintext (acceptable for local dev only).
 ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', '')
 
+# Mentor application: cooldown window after a REJECTED decision before the
+# applicant can re-apply. Withdrawn applications have NO cooldown
+# (user-initiated, no admin work wasted). Override per-env via env var.
+MENTOR_APPLICATION_REJECT_COOLDOWN_DAYS = int(
+    os.environ.get('MENTOR_APPLICATION_REJECT_COOLDOWN_DAYS', '30')
+)
+
 
 # File Upload Settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB

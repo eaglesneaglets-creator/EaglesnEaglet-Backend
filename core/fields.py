@@ -61,7 +61,7 @@ class EncryptedCharField(models.TextField):
             return value
         return cipher.encrypt(str(value).encode()).decode()
 
-    def from_db_value(self, value, expression, connection):
+    def from_db_value(self, value, _expression, _connection):
         if value in (None, ''):
             return value
         cipher = _get_cipher()

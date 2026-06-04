@@ -18,7 +18,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User, UserProfile, MentorKYC, EagletProfile, MenteeKYC, LoginHistory, MentorAvailability, EmailChangeRequest
+from .models import User, UserProfile, MentorKYC, EagletProfile, MenteeKYC, LoginHistory, MentorAvailability
 from .constants import (
     EXPERTISE_CHOICES, MENTORSHIP_INTEREST_CHOICES,
     EDUCATIONAL_LEVEL_CHOICES, MENTORSHIP_GOAL_CHOICES, AGE_GROUP_CHOICES,

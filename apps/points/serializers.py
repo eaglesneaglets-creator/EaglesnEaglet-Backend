@@ -7,7 +7,6 @@ badges, and configuration.
 
 from rest_framework import serializers
 
-from apps.nests.serializers import UserMinimalSerializer
 
 from .models import PointConfiguration, PointTransaction, Badge, UserBadge
 
@@ -51,16 +50,6 @@ class ManualPointAwardSerializer(serializers.Serializer):
     points = serializers.IntegerField(min_value=1, max_value=1000)
     description = serializers.CharField(max_length=250, min_length=5)
     nest_id = serializers.UUIDField(required=False)
-
-
-class UserPointsSummarySerializer(serializers.Serializer):
-    """User's points dashboard summary."""
-
-    total_points = serializers.IntegerField()
-    streak_days = serializers.IntegerField()
-    rank = serializers.IntegerField()
-    badge_count = serializers.IntegerField()
-    breakdown = serializers.DictField(child=serializers.IntegerField())
 
 
 class LeaderboardEntrySerializer(serializers.Serializer):

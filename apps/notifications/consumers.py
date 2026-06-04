@@ -36,7 +36,7 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
         await self.accept()
         logger.info("NotificationConsumer connected: user=%s", user.id)
 
-    async def disconnect(self, close_code):
+    async def disconnect(self, _close_code):
         if hasattr(self, "group_name"):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
 

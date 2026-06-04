@@ -91,10 +91,16 @@ def api():
 
 # ─── Eligibility ─────────────────────────────────────────────────────────────
 
-def test_mentee_is_not_eligible(mentee):
+def test_mentee_without_kyc_or_engagement_is_not_eligible(mentee):
+    """Phase 22-01 opened the gate to mentees with KYC + Level 3 + completed program.
+    A bare mentee (no KYC, no level, no completion) still fails — but for the new
+    mentee-specific reasons, not the old "mentors only" string."""
     elig = mentee.can_request_admin()
     assert elig["eligible"] is False
-    assert any("only available to approved mentors" in r for r in elig["reasons"])
+    # New eaglet gate strings:
+    assert any("mentee profile must be KYC-approved" in r for r in elig["reasons"])
+    # Eaglet-specific cohort exclusion string (admin/visitor) MUST NOT appear here.
+    assert not any("open to mentors and mentees only" in r for r in elig["reasons"])
 
 
 def test_fresh_mentor_is_not_eligible(fresh_mentor):

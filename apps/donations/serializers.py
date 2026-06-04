@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from .models import Campaign, Donation, RecurringDonation
+from .models import Campaign, Donation
 
 
 class CampaignListSerializer(serializers.ModelSerializer):
@@ -221,14 +221,3 @@ class DonationHistorySerializer(serializers.ModelSerializer):
             "is_anonymous",
             "created_at",
         ]
-
-
-class AdminDonationStatsSerializer(serializers.Serializer):
-    """Read-only stats for the admin analytics dashboard."""
-
-    total_raised = serializers.DecimalField(max_digits=14, decimal_places=2)
-    monthly_raised = serializers.DecimalField(max_digits=14, decimal_places=2)
-    total_donations = serializers.IntegerField()
-    active_campaigns = serializers.IntegerField()
-    success_rate = serializers.FloatField()
-    recent_donations = DonationSerializer(many=True)
