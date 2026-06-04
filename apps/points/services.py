@@ -11,7 +11,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
-from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.users.models import User
 from .models import PointConfiguration, PointTransaction, Badge, UserBadge

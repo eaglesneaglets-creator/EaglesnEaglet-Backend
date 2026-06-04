@@ -15,7 +15,6 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'eaglesneagletsbackend.settings.
 # models, settings, or apps (including channels routing modules).
 django.setup()
 
-from urllib.parse import urlparse
 
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack

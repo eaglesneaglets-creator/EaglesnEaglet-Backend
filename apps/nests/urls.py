@@ -19,8 +19,6 @@ from .views import (
     ProgramObjectiveViewSet,
     ProgramObjectiveRuleViewSet,
     NestEnrollmentView,
-    ProgramEnrollmentViewSet,
-    ProgramExitRequestViewSet,
 )
 
 # Top-level nest router

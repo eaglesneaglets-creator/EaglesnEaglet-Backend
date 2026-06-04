@@ -5,7 +5,7 @@ API endpoints for learning content management, progress tracking,
 and assignment submission/grading.
 """
 
-from rest_framework import status, viewsets
+from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -15,7 +15,6 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 
 from apps.nests.permissions import HasActiveProgram
 from core.pagination import StandardResultsSetPagination
-from core.permissions import IsEagle
 
 from .serializers import (
     ContentModuleListSerializer,

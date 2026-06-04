@@ -4,29 +4,22 @@ Authentication Views — register, login, logout, refresh, verify, password, cur
 Auto-extracted from monolithic views.py during Phase 11.5-04 split.
 """
 
-import requests
 import logging
-from urllib.parse import urlencode
 
 from django.conf import settings
-from django.db import models
-from django.shortcuts import redirect
-from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 
-from core.permissions.roles import IsEagle, IsEaglet, IsAdmin
 from core.throttling import BurstRateThrottle, LoginRateThrottle, RegisterRateThrottle, PasswordResetThrottle
 
 logger = logging.getLogger(__name__)
 
-from ..models import User, MentorKYC, MenteeKYC, EagletProfile
+from ..models import User, MentorKYC, EagletProfile
 from ..serializers import (
     CustomTokenObtainPairSerializer,
     UserSerializer,
@@ -36,28 +29,7 @@ from ..serializers import (
     PasswordResetConfirmSerializer,
     EmailVerificationSerializer,
     ResendVerificationSerializer,
-    MentorKYCSerializer,
-    MentorKYCStep1Serializer,
-    MentorKYCStep2Serializer,
-    MentorKYCStep3Serializer,
-    MentorKYCStep4Serializer,
-    EagletProfileSerializer,
-    EagletOnboardingSerializer,
-    EagletCompleteOnboardingSerializer,
-    MentorKYCListSerializer,
-    MentorKYCDetailSerializer,
-    KYCApprovalSerializer,
-    KYCRejectionSerializer,
-    KYCRequestChangesSerializer,
-    AdminInternalNoteSerializer,
-    MentorKYCNewSerializer,
-    MentorKYCNewUpdateSerializer,
-    MenteeKYCSerializer,
-    MenteeKYCUpdateSerializer,
-    MenteeKYCListSerializer,
-    MenteeKYCDetailSerializer,
 )
-from ..validators import validate_cv_file, validate_image_file
 
 
 # =============================================================================
@@ -613,6 +585,20 @@ class CurrentUserView(APIView):
                 profile = EagletProfile.objects.filter(user=user).first()
                 data['profile_completeness'] = profile.profile_completeness if profile else 0
                 data['onboarding_completed'] = profile.onboarding_completed if profile else False
+
+            # Mentor-application status (plan 16-01): lets the FE render the
+            # "Apply to mentor" CTA + current application state without extra calls.
+            from ..models_mentor_app import MentorApplication
+            from ..services import mentor_application as mentor_app_svc
+
+            latest_app = (
+                MentorApplication.objects
+                .filter(user=user)
+                .order_by('-created_at')
+                .first()
+            )
+            data['mentor_application_eligible'] = mentor_app_svc.is_eligible(user)
+            data['mentor_application_status'] = latest_app.status if latest_app else None
 
             # Program access status (plan 14-02): everything FE needs to render
             # lock states without extra requests.

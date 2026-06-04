@@ -15,7 +15,7 @@ from django.db.models.functions import TruncWeek
 from django.utils import timezone
 
 from apps.nests.models import Nest, NestMembership, MentorshipRequest
-from apps.content.models import ContentModule, ContentProgress, AssignmentSubmission
+from apps.content.models import ContentModule, ContentProgress
 from apps.points.models import PointTransaction
 from apps.points.services import PointService
 

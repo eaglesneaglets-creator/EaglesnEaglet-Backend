@@ -11,7 +11,6 @@ Celery is used for running background tasks like:
 
 import os
 from celery import Celery
-from celery.schedules import crontab
 
 # Set the default Django settings module
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'eaglesneagletsbackend.settings')

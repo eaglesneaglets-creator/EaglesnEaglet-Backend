@@ -7,28 +7,22 @@ Custom user model with comprehensive security features and role-based access.
 import uuid
 import hashlib
 import secrets
-import logging
 from django.conf import settings as django_settings
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.db import models, transaction
 from django.db.models import F
 from django.utils import timezone
-from django.core.validators import RegexValidator
 from core.mixins.timestamp import TimestampMixin
 from core.fields import EncryptedCharField
 from core.validators import validate_phone_number
 from .validators import (
-    validate_cv_file,
-    validate_image_file,
     validate_linkedin_url,
     validate_ghana_phone,
     validate_national_id,
 )
 from .constants import (
-    MENTORSHIP_TYPE_CHOICES,
     MARITAL_STATUS_CHOICES,
     EMPLOYMENT_STATUS_CHOICES,
-    APPROVAL_STATUS_CHOICES,
 )
 
 
@@ -245,35 +239,32 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
 
     def can_request_admin(self):
         """
-        Eligibility check for the self-service Admin Role EOI (plan 18-01).
+        Eligibility check for the self-service Admin Role EOI (plan 18-01 + 22-01).
+
+        Branched by role:
+          - EAGLE (mentor): is_active + mentor_kyc approved + 30 days post-approval
+          - EAGLET (mentee, Phase 22): is_active + mentee_kyc approved + Level >= 3
+            + at least one completed ProgramEnrollment
+          - admin / visitor / anything else: blocked
+
+        Common tail (both eligible roles): already-admin guard + pending-request guard.
+
+        Invite path bypass: ``accept_invite`` in services/admin_role.py does NOT call
+        this method, so admins can invite anyone regardless of eligibility.
 
         Returns ``{"eligible": bool, "reasons": [str]}``.
         Empty `reasons` ⇒ eligible.
         """
-        from datetime import timedelta
         reasons = []
 
-        if self.role != self.Role.EAGLE:
-            reasons.append('Admin role is only available to approved mentors.')
-            # Short-circuit — the remaining checks assume mentor context.
-            return {'eligible': False, 'reasons': reasons}
-
-        if not self.is_active:
-            reasons.append('Your account is currently suspended.')
-
-        kyc = getattr(self, 'mentor_kyc', None)
-        if kyc is None or kyc.status != 'approved':
-            reasons.append('Your mentor profile must be KYC-approved first.')
-        elif kyc.reviewed_at is None:
-            reasons.append('Your mentor profile must be KYC-approved first.')
+        if self.role == self.Role.EAGLE:
+            reasons.extend(self._eagle_admin_eligibility_reasons())
+        elif self.role == self.Role.EAGLET:
+            reasons.extend(self._eaglet_admin_eligibility_reasons())
         else:
-            days_since_approval = (timezone.now() - kyc.reviewed_at).days
-            if days_since_approval < 30:
-                reasons.append(
-                    f'You must be an approved mentor for at least 30 days. '
-                    f'You have been approved for {days_since_approval} day'
-                    f'{"" if days_since_approval == 1 else "s"}.'
-                )
+            reasons.append('Admin role applications are open to mentors and mentees only.')
+            # Short-circuit — the common-tail checks below assume an applicant context.
+            return {'eligible': False, 'reasons': reasons}
 
         if self.is_platform_staff:
             reasons.append('You already hold admin privileges.')
@@ -288,6 +279,59 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
             reasons.append('You already have a pending admin request.')
 
         return {'eligible': not reasons, 'reasons': reasons}
+
+    def _eagle_admin_eligibility_reasons(self):
+        """Mentor-path eligibility reasons (plan 18-01). Reason strings frozen — FE
+        may parse them by substring."""
+        reasons = []
+        if not self.is_active:
+            reasons.append('Your account is currently suspended.')
+
+        kyc = getattr(self, 'mentor_kyc', None)
+        if kyc is None or kyc.status != 'approved' or kyc.reviewed_at is None:
+            reasons.append('Your mentor profile must be KYC-approved first.')
+        else:
+            days_since_approval = (timezone.now() - kyc.reviewed_at).days
+            if days_since_approval < 30:
+                reasons.append(
+                    f'You must be an approved mentor for at least 30 days. '
+                    f'You have been approved for {days_since_approval} day'
+                    f'{"" if days_since_approval == 1 else "s"}.'
+                )
+        return reasons
+
+    def _eaglet_admin_eligibility_reasons(self):
+        """Mentee-path eligibility reasons (plan 22-01)."""
+        reasons = []
+        if not self.is_active:
+            reasons.append('Your account is currently suspended.')
+
+        kyc = getattr(self, 'mentee_kyc', None)
+        if kyc is None or kyc.status != 'approved' or kyc.reviewed_at is None:
+            reasons.append('Your mentee profile must be KYC-approved first.')
+
+        # Lazy imports avoid users→nests cycle at module load.
+        try:
+            from apps.nests.levels import compute_level
+            level = compute_level(self).get('current_level', 0) or 0
+        except Exception:
+            level = 0
+        if level < 3:
+            reasons.append(
+                f'You must reach mentee Level 3 to apply. Current level: {level}.'
+            )
+
+        try:
+            from apps.nests.models_program import ProgramEnrollment
+            completed_exists = ProgramEnrollment.objects.filter(
+                mentee=self, status='completed',
+            ).exists()
+        except Exception:
+            completed_exists = False
+        if not completed_exists:
+            reasons.append('You must have completed at least one program to apply.')
+
+        return reasons
 
     @property
     def is_account_locked(self):
@@ -1327,4 +1371,8 @@ from .models_admin import (  # noqa: E402,F401
     AdminInvite,
     AdminRoleAudit,
     AdminRoleRequest,
+)
+from .models_mentor_app import (  # noqa: E402,F401
+    MentorApplication,
+    MentorApplicationAudit,
 )

@@ -1,0 +1,33 @@
+{% extends "emails/base.html" %}
+
+{% block title %}You're now a mentor on Eagles & Eaglets{% endblock %}
+
+{% block content %}
+<h2>Welcome to the mentor team!</h2>
+
+<p>Hi {{ first_name }},</p>
+
+<p>
+    Your mentor application has been approved. Your account has been upgraded —
+    you can now create nests, mentor eaglets, and manage programs on Eagles &amp;
+    Eaglets.
+</p>
+
+{% if note %}
+<div class="note-box">
+    <p class="note-box-label">Reviewer note</p>
+    <p>{{ note }}</p>
+</div>
+{% endif %}
+
+<div class="button-wrapper">
+    <a href="{{ dashboard_url }}" class="button">Open mentor dashboard</a>
+</div>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #94a3b8;">
+    Your mentee history and progress are preserved. Reply to this email if
+    you have questions about your new role.
+</p>
+{% endblock %}

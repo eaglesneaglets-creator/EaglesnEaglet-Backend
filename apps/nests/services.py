@@ -260,16 +260,34 @@ class MembershipService:
 # Community — posts, resources, events
 # ---------------------------------------------------------------------------
 
+def _can_participate_in_nest(user, nest_id: str) -> bool:
+    """True iff ``user`` may post / comment / upload in the given Nest.
+
+    Mirrors the IsNestMember permission contract so the service layer doesn't
+    fork from the view-layer check:
+      - Platform admins bypass (is_staff or is_superuser).
+      - The owning Eagle (Nest.eagle FK) is always allowed — they don't carry a
+        NestMembership row for their own Nest, which used to lock them out.
+      - Otherwise the user must hold an ACTIVE NestMembership.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if user.is_staff or user.is_superuser:
+        return True
+    if Nest.objects.filter(pk=nest_id, eagle=user).exists():
+        return True
+    return NestMembership.objects.filter(
+        nest_id=nest_id, user=user, status="active",
+    ).exists()
+
+
 class CommunityService:
     """Handles Nest community features: posts, resources, events."""
 
     @staticmethod
     def create_post(author, nest_id: str, data: dict) -> NestPost:
         """Create a post in a Nest feed."""
-        # Verify membership
-        if not NestMembership.objects.filter(
-            nest_id=nest_id, user=author, status="active"
-        ).exists():
+        if not _can_participate_in_nest(author, nest_id):
             raise PermissionDenied("You must be an active member to post.")
 
         post = NestPost.objects.create(nest_id=nest_id, author=author, **data)
@@ -303,9 +321,7 @@ class CommunityService:
         except NestPost.DoesNotExist:
             raise NotFound("Post not found.")
 
-        if not NestMembership.objects.filter(
-            nest_id=post.nest_id, user=author, status="active"
-        ).exists():
+        if not _can_participate_in_nest(author, post.nest_id):
             raise PermissionDenied("You must be an active member to comment.")
 
         comment = NestPostComment.objects.create(
@@ -367,9 +383,7 @@ class CommunityService:
     @staticmethod
     def upload_resource(uploader, nest_id: str, data: dict) -> NestResource:
         """Upload a resource to the Nest shared library."""
-        if not NestMembership.objects.filter(
-            nest_id=nest_id, user=uploader, status="active"
-        ).exists():
+        if not _can_participate_in_nest(uploader, nest_id):
             raise PermissionDenied("You must be an active member to upload resources.")
 
         return NestResource.objects.create(
@@ -421,9 +435,7 @@ class CommunityService:
         except NestEvent.DoesNotExist:
             raise NotFound("Event not found.")
 
-        if not NestMembership.objects.filter(
-            nest=event.nest, user=user, status="active"
-        ).exists():
+        if not _can_participate_in_nest(user, event.nest_id):
             raise PermissionDenied("You must be an active member to mark attendance.")
 
         attendance, created = EventAttendance.objects.get_or_create(

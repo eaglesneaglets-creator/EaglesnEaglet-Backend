@@ -1,0 +1,39 @@
+{% extends "emails/base.html" %}
+
+{% block title %}About your mentor application{% endblock %}
+
+{% block content %}
+<h2>An update on your mentor application</h2>
+
+<p>Hi {{ first_name }},</p>
+
+<p>
+    Thank you for applying to mentor on Eagles &amp; Eaglets. After review,
+    the admin team has decided not to move forward with your application at
+    this time.
+</p>
+
+<div class="note-box">
+    <p class="note-box-label">Reviewer note</p>
+    <p>{{ reason }}</p>
+</div>
+
+<p>
+    This decision doesn't change your mentee status — you keep full access to
+    your program, content, points, and community. You can apply again after
+    <strong>{{ cooldown_until|date:"F j, Y" }}</strong>
+    ({{ cooldown_days }}-day cooldown) once you've grown further on the
+    platform.
+</p>
+
+<div class="button-wrapper">
+    <a href="{{ dashboard_url }}" class="button secondary">Open dashboard</a>
+</div>
+
+<hr class="divider">
+
+<p style="font-size: 13px; color: #94a3b8;">
+    Questions about this decision? Reply to this email and the admin team
+    will follow up.
+</p>
+{% endblock %}

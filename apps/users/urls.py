@@ -101,6 +101,14 @@ urlpatterns = [
     path('<uuid:user_id>/availability/', views.PublicMentorAvailabilityView.as_view(), name='public-availability'),
 
     # =========================================================================
+    # MENTOR APPLICATION (Phase 16-01)
+    # =========================================================================
+    path('mentor-application/', views.MentorApplicationView.as_view(), name='mentor-application'),
+    path('mentor-application/<uuid:application_id>/withdraw/', views.MentorApplicationWithdrawView.as_view(), name='mentor-application-withdraw'),
+    path('admin/mentor-applications/', views.AdminMentorApplicationListView.as_view(), name='admin-mentor-application-list'),
+    path('admin/mentor-applications/<uuid:application_id>/<str:action>/', views.AdminMentorApplicationDecisionView.as_view(), name='admin-mentor-application-decision'),
+
+    # =========================================================================
     # ACCOUNT SETTINGS (Phase 11-02)
     # =========================================================================
     path('email/change/request/', views.EmailChangeRequestView.as_view(), name='email-change-request'),

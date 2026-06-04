@@ -18,7 +18,6 @@ from .serializers import (
     PointConfigurationSerializer,
     PointTransactionSerializer,
     ManualPointAwardSerializer,
-    UserPointsSummarySerializer,
     LeaderboardEntrySerializer,
     BadgeSerializer,
     UserBadgeSerializer,

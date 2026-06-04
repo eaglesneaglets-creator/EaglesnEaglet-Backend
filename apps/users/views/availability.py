@@ -4,60 +4,15 @@ Mentor Availability Schedule Views
 Auto-extracted from monolithic views.py during Phase 11.5-04 split.
 """
 
-import requests
 import logging
-from urllib.parse import urlencode
 
-from django.conf import settings
-from django.db import models
-from django.shortcuts import redirect
-from django.utils import timezone
-from rest_framework import serializers, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
+from rest_framework.permissions import IsAuthenticated
 
-from core.permissions.roles import IsEagle, IsEaglet, IsAdmin
-from core.throttling import BurstRateThrottle, LoginRateThrottle, RegisterRateThrottle, PasswordResetThrottle
 
 logger = logging.getLogger(__name__)
 
-from ..models import User, MentorKYC, MenteeKYC, EagletProfile
-from ..serializers import (
-    CustomTokenObtainPairSerializer,
-    UserSerializer,
-    UserRegistrationSerializer,
-    PasswordChangeSerializer,
-    PasswordResetRequestSerializer,
-    PasswordResetConfirmSerializer,
-    EmailVerificationSerializer,
-    ResendVerificationSerializer,
-    MentorKYCSerializer,
-    MentorKYCStep1Serializer,
-    MentorKYCStep2Serializer,
-    MentorKYCStep3Serializer,
-    MentorKYCStep4Serializer,
-    EagletProfileSerializer,
-    EagletOnboardingSerializer,
-    EagletCompleteOnboardingSerializer,
-    MentorKYCListSerializer,
-    MentorKYCDetailSerializer,
-    KYCApprovalSerializer,
-    KYCRejectionSerializer,
-    KYCRequestChangesSerializer,
-    AdminInternalNoteSerializer,
-    MentorKYCNewSerializer,
-    MentorKYCNewUpdateSerializer,
-    MenteeKYCSerializer,
-    MenteeKYCUpdateSerializer,
-    MenteeKYCListSerializer,
-    MenteeKYCDetailSerializer,
-)
-from ..validators import validate_cv_file, validate_image_file
 
 
 class MentorAvailabilityView(APIView):
@@ -72,7 +27,6 @@ class MentorAvailabilityView(APIView):
         return Response({'success': True, 'data': serializer.data})
 
     def post(self, request):
-        from ..models import MentorAvailability
         from ..serializers import MentorAvailabilitySerializer
         if request.user.role != 'eagle':
             return Response({'success': False, 'error': {'message': 'Only Eagles can set availability.'}}, status=403)
@@ -110,5 +64,3 @@ class PublicMentorAvailabilityView(APIView):
 # Account Settings (Phase 11-02)
 # =============================================================================
 
-import secrets
-from datetime import timedelta

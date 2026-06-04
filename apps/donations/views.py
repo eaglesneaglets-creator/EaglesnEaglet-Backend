@@ -18,7 +18,6 @@ from core.permissions.roles import IsAdmin, IsEagleOrAdmin
 
 from .models import Donation
 from .serializers import (
-    AdminDonationStatsSerializer,
     CampaignCreateSerializer,
     CampaignDetailSerializer,
     CampaignListSerializer,
