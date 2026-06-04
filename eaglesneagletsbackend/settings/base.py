@@ -266,6 +266,10 @@ BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:8000')
 # If unset, EncryptedCharField stores plaintext (acceptable for local dev only).
 ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', '')
 
+# Auth-cookie domain (overridden in production.py from AUTH_COOKIE_DOMAIN env).
+# None = host-scoped cookie (correct for localhost + single-host deploys).
+AUTH_COOKIE_DOMAIN = None
+
 # Mentor application: cooldown window after a REJECTED decision before the
 # applicant can re-apply. Withdrawn applications have NO cooldown
 # (user-initiated, no admin work wasted). Override per-env via env var.
@@ -310,6 +314,24 @@ LOGGING = {
         'django': {
             'handlers': ['console'],
             'level': 'INFO',
+            'propagate': False,
+        },
+        # django.request logs every 4xx as WARNING — including the constant
+        # background scan traffic (bots probing /bot-connect.js, /css/*, etc.)
+        # that every public domain receives. Raise to ERROR so 404/400 noise is
+        # suppressed while genuine 500s still surface. Real client errors are
+        # already logged explicitly by the views that raise them.
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # DisallowedHost (scanners sending bogus Host headers) is logged by
+        # django.security.DisallowedHost as ERROR — keep it visible but isolate
+        # it so it can be tuned independently if scan volume grows.
+        'django.security.DisallowedHost': {
+            'handlers': ['console'],
+            'level': 'CRITICAL',
             'propagate': False,
         },
         'apps': {
