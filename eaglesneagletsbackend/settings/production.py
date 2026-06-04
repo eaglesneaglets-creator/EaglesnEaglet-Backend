@@ -162,6 +162,12 @@ CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', cast=Csv(), default='')
 
+# Auth-cookie domain. Set to a leading-dot parent domain (e.g.
+# ".eaglesandeaglets.com") so the httpOnly access/refresh cookies are shared
+# across the www. (frontend) and api. (backend) subdomains. Leave empty for
+# single-host / localhost deploys, where the cookie is host-scoped.
+AUTH_COOKIE_DOMAIN = config('AUTH_COOKIE_DOMAIN', default='') or None
+
 # Content Security
 SECURE_CONTENT_TYPE_NOSNIFF = True
 # SECURE_BROWSER_XSS_FILTER removed — deprecated; CSP in SecurityHeadersMiddleware provides protection

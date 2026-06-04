@@ -54,6 +54,8 @@ def _set_auth_cookies(response, access_token: str, refresh_token: str = None) ->
     """
     is_secure = not settings.DEBUG
     samesite = 'None' if is_secure else 'Lax'
+    # Leading-dot parent domain so cookies span www. + api. subdomains in prod.
+    cookie_domain = getattr(settings, 'AUTH_COOKIE_DOMAIN', None)
 
     response.set_cookie(
         key='access_token',
@@ -63,6 +65,7 @@ def _set_auth_cookies(response, access_token: str, refresh_token: str = None) ->
         samesite=samesite,
         max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
         path='/',
+        domain=cookie_domain,
     )
     if refresh_token is not None:
         response.set_cookie(
@@ -73,6 +76,7 @@ def _set_auth_cookies(response, access_token: str, refresh_token: str = None) ->
             samesite=samesite,
             max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
             path='/',
+            domain=cookie_domain,
         )
 
 
@@ -80,8 +84,10 @@ def _clear_auth_cookies(response) -> None:
     """Delete both JWT cookies on logout."""
     is_secure = not settings.DEBUG
     samesite = 'None' if is_secure else 'Lax'
-    response.delete_cookie('access_token', path='/', samesite=samesite)
-    response.delete_cookie('refresh_token', path='/', samesite=samesite)
+    # Domain must match the value used at set time, or the browser won't delete it.
+    cookie_domain = getattr(settings, 'AUTH_COOKIE_DOMAIN', None)
+    response.delete_cookie('access_token', path='/', samesite=samesite, domain=cookie_domain)
+    response.delete_cookie('refresh_token', path='/', samesite=samesite, domain=cookie_domain)
 
 
 
