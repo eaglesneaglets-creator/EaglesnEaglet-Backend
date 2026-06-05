@@ -254,6 +254,9 @@ class NestPostSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return False
+        # Feed list annotates liked_by_me on the queryset (see CommunityService.get_nest_posts).
+        if hasattr(obj, "liked_by_me"):
+            return obj.liked_by_me
         return obj.likes.filter(user=request.user).exists()
 
     def get_comments(self, obj):
