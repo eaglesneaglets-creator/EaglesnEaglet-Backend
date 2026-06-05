@@ -186,3 +186,51 @@ def test_add_reply_endpoint(db, api_client, nest, post, member, top_comment):
     r = api_client.post(url, {"content": "My reply"}, format="json")
     assert r.status_code == 201
     assert r.data["data"]["content"] == "My reply"
+
+
+def test_get_nest_posts_annotates_liked_by_me(db, nest, eagle, eaglet):
+    """get_nest_posts annotates liked_by_me for the requesting user."""
+    liked_post = NestPost.objects.create(nest=nest, author=eagle, content="Liked")
+    unliked_post = NestPost.objects.create(nest=nest, author=eagle, content="Not liked")
+    NestPostLike.objects.create(post=liked_post, user=eaglet)
+
+    posts = {
+        str(p.id): p.liked_by_me
+        for p in CommunityService.get_nest_posts(str(nest.id), user=eaglet)
+    }
+    assert posts[str(liked_post.id)] is True
+    assert posts[str(unliked_post.id)] is False
+
+
+def test_nest_post_serializer_liked_by_me_uses_annotation(db, nest, eagle, eaglet, post):
+    """Serializer reads liked_by_me annotation without extra DB queries."""
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+    from django.test import RequestFactory
+
+    from apps.nests.serializers import NestPostSerializer
+
+    NestPostLike.objects.create(post=post, user=eaglet)
+    annotated_post = CommunityService.get_nest_posts(str(nest.id), user=eaglet).get(pk=post.id)
+
+    request = RequestFactory().get("/")
+    request.user = eaglet
+    serializer = NestPostSerializer(annotated_post, context={"request": request})
+
+    with CaptureQueriesContext(connection) as ctx:
+        assert serializer.get_liked_by_me(annotated_post) is True
+    assert len(ctx) == 0, f"Expected 0 like queries, got {len(ctx)}"
+
+
+def test_list_posts_returns_liked_by_me(db, api_client, nest, eagle, member, post):
+    """GET /nests/{pk}/posts/ includes correct liked_by_me per post."""
+    NestPostLike.objects.create(post=post, user=member)
+    other = NestPost.objects.create(nest=nest, author=eagle, content="Other post")
+
+    api_client.force_authenticate(user=member)
+    r = api_client.get(f"/api/v1/nests/{nest.id}/posts/")
+    assert r.status_code == 200
+
+    by_id = {item["id"]: item["liked_by_me"] for item in r.data["data"]}
+    assert by_id[str(post.id)] is True
+    assert by_id[str(other.id)] is False

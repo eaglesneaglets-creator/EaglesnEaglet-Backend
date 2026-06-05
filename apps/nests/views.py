@@ -323,7 +323,7 @@ class NestPostViewSet(ViewSet):
 
     def list(self, request, nest_pk=None):
         """List posts in a Nest."""
-        posts = CommunityService.get_nest_posts(nest_pk)
+        posts = CommunityService.get_nest_posts(nest_pk, user=request.user)
         paginator = StandardResultsSetPagination()
         page = paginator.paginate_queryset(posts, request)
         serializer = NestPostSerializer(page, many=True, context={"request": request})

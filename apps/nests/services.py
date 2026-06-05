@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 
 from django.db import transaction
-from django.db.models import F, Prefetch
+from django.db.models import Exists, F, OuterRef, Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.exceptions import (
@@ -305,13 +305,24 @@ class CommunityService:
         return post
 
     @staticmethod
-    def get_nest_posts(nest_id: str):
-        """Return posts for a Nest feed, newest first."""
-        return (
+    def get_nest_posts(nest_id: str, user=None):
+        """Return posts for a Nest feed, newest first.
+
+        When *user* is authenticated, annotates each post with ``liked_by_me``
+        via a single EXISTS subquery so the feed serializer avoids N+1 lookups.
+        """
+        qs = (
             NestPost.objects.filter(nest_id=nest_id)
             .select_related("author")
             .prefetch_related("comments__author")
         )
+        if user is not None and user.is_authenticated:
+            liked_by_user = NestPostLike.objects.filter(
+                post_id=OuterRef("pk"),
+                user_id=user.pk,
+            )
+            qs = qs.annotate(liked_by_me=Exists(liked_by_user))
+        return qs
 
     @staticmethod
     def add_comment(author, post_id: str, content: str) -> NestPostComment:
