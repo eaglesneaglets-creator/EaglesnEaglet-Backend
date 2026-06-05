@@ -352,6 +352,18 @@ LOGGING = {
             'level': 'WARNING',
             'propagate': False,
         },
+        # Inherited intent from base.py — must be re-declared here because this
+        # module replaces LOGGING wholesale (does not merge with base).
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'django.security.DisallowedHost': {
+            'handlers': ['console'],
+            'level': 'CRITICAL',
+            'propagate': False,
+        },
         'apps': {
             'handlers': ['console'],
             'level': 'INFO',
