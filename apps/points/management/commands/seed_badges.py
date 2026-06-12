@@ -1,6 +1,6 @@
 """
 Management command: seed_badges
-Creates or updates all 47 badge records.
+Creates or updates all 46 badge records.
 Safe to run multiple times (uses update_or_create on slug).
 
 Usage:
@@ -69,7 +69,6 @@ BADGES = [
     # ── Special One-Time (ONE_TIME_EVENT) ─────────────────────────────────
     ("egg_cracker",           "Egg Cracker",       "one_time_event", 1, "The journey begins — profile complete.",                  "special", 0, "egg_cracker"),
     ("first_nest_join",       "Found My Nest",     "one_time_event", 1, "Belonging starts here — joined your first Nest.",         "special", 0, "found_my_nest"),
-    ("first_resource_share",  "Resource Eagle",    "one_time_event", 1, "Contributing to the flock — first resource shared.",      "special", 0, "resource_eagle"),
     ("mentors_mark",          "Mentor's Mark",     "one_time_event", 1, "Noticed by your mentor — received a manual point award.", "special", 0, "mentors_mark"),
     ("perfect_feathers",      "Perfect Feathers",  "one_time_event", 1, "Flawless execution — scored 100% on a quiz.",             "special", 0, "perfect_feathers"),
     ("early_bird",            "Early Bird",        "one_time_event", 1, "Ahead of the flock — submitted an assignment early.",     "special", 0, "early_bird"),
@@ -87,7 +86,7 @@ BADGES = [
 
 
 class Command(BaseCommand):
-    help = "Seed all 47 badge records. Safe to run multiple times."
+    help = "Seed all 46 badge records. Safe to run multiple times."
 
     def handle(self, *args, **options):
         created_count = 0

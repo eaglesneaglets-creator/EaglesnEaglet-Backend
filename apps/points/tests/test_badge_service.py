@@ -60,3 +60,18 @@ def test_badge_serializer_progress_field(eaglet, rf):
     assert data["progress"] == 50
     assert data["earned"] is False
     assert "slug" in data
+
+
+@pytest.mark.django_db
+def test_eagle_cannot_earn_badges():
+    """Badges are Eaglet-only — Eagles must never receive UserBadge rows."""
+    from apps.users.models import User
+
+    eagle = User.objects.create_user(
+        email="eagle@test.com", password="pass", role="eagle"
+    )
+    assert PointService.award_one_time_badge(eagle, "egg_cracker") is False
+    assert not UserBadge.objects.filter(user=eagle).exists()
+
+    PointService.check_and_award_badges(eagle)
+    assert not UserBadge.objects.filter(user=eagle).exists()

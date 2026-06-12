@@ -8,6 +8,7 @@ leaderboard calculations, badge checking, and streak tracking.
 import logging
 from datetime import timedelta
 
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -184,9 +185,16 @@ class PointService:
         )["total"] or 0
 
     @staticmethod
-    def get_user_rank(user) -> int:
-        """Global rank based on total points (1-indexed)."""
-        user_total = PointService.get_user_total_points(user)
+    def get_user_rank(user, total: int | None = None) -> int:
+        """Global rank based on total points (1-indexed).
+
+        Pass ``total`` when the caller already computed the user's total
+        (e.g. get_user_points_summary) to avoid re-aggregating it.
+        """
+        user_total = (
+            total if total is not None
+            else PointService.get_user_total_points(user)
+        )
         if user_total == 0:
             return 0
         above = (
@@ -334,7 +342,7 @@ class PointService:
 
     @staticmethod
     def _notify_badge_earned(user, badge):
-        """Create a notification when a badge is earned."""
+        """Create a notification when a badge is earned (Eaglets only)."""
         try:
             from apps.notifications.services import NotificationService
             NotificationService.create_notification(
@@ -342,7 +350,7 @@ class PointService:
                 notification_type="badge_earned",
                 title=f"Badge Earned: {badge.name}",
                 message=badge.description,
-                action_url="/points/badges",
+                action_url="/eaglet/badges",
             )
         except Exception as exc:
             logger.warning("Badge notification failed: %s", exc)
@@ -350,9 +358,12 @@ class PointService:
     @staticmethod
     def award_one_time_badge(user, slug: str) -> bool:
         """
-        Award a ONE_TIME_EVENT badge by slug.
-        Returns True if the badge was newly awarded, False if already earned or not found.
+        Award a ONE_TIME_EVENT badge by slug (Eaglets only).
+        Returns True if the badge was newly awarded, False if already earned,
+        not found, or user is not an Eaglet.
         """
+        if getattr(user, "role", None) != "eaglet":
+            return False
         try:
             badge = Badge.objects.get(
                 slug=slug, criteria_type=Badge.CriteriaType.ONE_TIME_EVENT
@@ -377,17 +388,22 @@ class PointService:
 
     @staticmethod
     def get_user_streak(user) -> int:
-        """Calculate consecutive days the user has earned points."""
-        txns = (
+        """Calculate consecutive days the user has earned points.
+
+        Distinct activity dates are computed DB-side (perf audit B2): the old
+        version pulled EVERY transaction timestamp into Python and deduped
+        there — unbounded transfer for active users. ``.dates()`` returns one
+        row per distinct day; the slice bounds the worst case (a streak longer
+        than 400 days would be truncated — acceptable).
+        """
+        dates = list(
             PointTransaction.objects.filter(user=user)
-            .order_by("-created_at")
-            .values_list("created_at", flat=True)
+            .dates("created_at", "day", order="DESC")[:400]
         )
 
-        if not txns:
+        if not dates:
             return 0
 
-        dates = sorted(set(t.date() for t in txns), reverse=True)
         today = timezone.now().date()
 
         if dates[0] < today - timedelta(days=1):
@@ -407,38 +423,60 @@ class PointService:
         """Return badges earned by a user."""
         return UserBadge.objects.filter(user=user).select_related("badge")
 
+    SUMMARY_CACHE_TTL = 60  # seconds
+
+    @staticmethod
+    def summary_cache_key(user_id) -> str:
+        return f"points_summary:{user_id}"
+
+    @staticmethod
+    def invalidate_summary_cache(user_id) -> None:
+        """Drop the cached summary — called from points/badge signals."""
+        cache.delete(PointService.summary_cache_key(user_id))
+
     @staticmethod
     def get_user_points_summary(user) -> dict:
         """
-        Get all points-related stats for a user in a consolidated manner.
-        Reduces number of queries for the 'my points' dashboard.
+        All points stats for the 'my points' dashboard, consolidated + cached.
+
+        Perf audit B1/B2: was 6 queries per request (total computed twice —
+        once standalone, once inside rank). Now 4 queries:
+          1. breakdown by activity type (total derived by summing it)
+          2. badge count
+          3. rank (reuses the derived total)
+          4. streak (DB-side distinct dates)
+        Result cached for SUMMARY_CACHE_TTL; invalidated by signals when a
+        new PointTransaction or UserBadge lands, so awards show immediately.
         """
-        # 1. Total points
-        total = PointTransaction.objects.filter(user=user).aggregate(
-            total=Sum("points")
-        )["total"] or 0
-        
-        # 2. Badge count
-        badge_count = UserBadge.objects.filter(user=user).count()
-        
-        # 3. Points breakdown by activity type
+        key = PointService.summary_cache_key(user.id)
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+
+        # 1. Breakdown — single GROUP BY; total derives from it for free.
         breakdown_qs = (
             PointTransaction.objects.filter(user=user)
             .values("activity_type")
             .annotate(total=Sum("points"))
         )
         breakdown = {item["activity_type"]: item["total"] for item in breakdown_qs}
-        
-        # 4. Streak (simplified for this optimization, keeping existing logic if complex)
+        total = sum(breakdown.values())
+
+        # 2. Badge count
+        badge_count = UserBadge.objects.filter(user=user).count()
+
+        # 3. Rank — reuse the total instead of re-aggregating it.
+        rank = PointService.get_user_rank(user, total=total)
+
+        # 4. Streak — bounded, DB-side distinct dates.
         streak = PointService.get_user_streak(user)
-        
-        # 5. Rank
-        rank = PointService.get_user_rank(user)
-        
-        return {
+
+        summary = {
             "total_points": total,
             "streak_days": streak,
             "breakdown": breakdown,
             "rank": rank,
             "badge_count": badge_count,
         }
+        cache.set(key, summary, PointService.SUMMARY_CACHE_TTL)
+        return summary

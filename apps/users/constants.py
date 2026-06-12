@@ -50,8 +50,10 @@ APPROVAL_STATUS_CHOICES = [
 # LEGACY CHOICES (Kept for backward compatibility)
 # =============================================================================
 EXPERTISE_CHOICES = [
-    ('spiritual_leadership', 'Spiritual Leadership'),
-    ('youth_ministry', 'Youth Ministry'),
+    # Display labels renamed for professional/educational tone (values are
+    # stored in the DB — never change the value side).
+    ('spiritual_leadership', 'Leadership & Character'),
+    ('youth_ministry', 'Youth Development'),
     ('marriage_counseling', 'Marriage Counseling'),
     ('career_guidance', 'Career Guidance'),
     ('business_mentoring', 'Business & Entrepreneurship'),

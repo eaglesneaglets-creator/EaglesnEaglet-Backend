@@ -28,6 +28,41 @@ from ..serializers import (
 )
 from ..validators import validate_cv_file, validate_image_file
 
+# ─── Post-approval KYC edit policy (two-tier, v1) ───────────────────────────
+# Approved profiles may edit contact/preference data freely from the Settings
+# Profile section. Identity fields (and the immutable Code of Conduct
+# snapshot) stay locked — changing those requires contacting support until a
+# re-verification pipeline exists.
+
+MENTOR_APPROVED_SAFE_FIELDS = {
+    'location', 'marital_status', 'employment_status', 'phone_number',
+    'profile_description', 'linkedin_url', 'mentorship_types',
+}
+MENTEE_APPROVED_SAFE_FIELDS = {
+    'marital_status', 'country', 'city', 'location', 'phone_number',
+    'employment_status', 'linkedin_url', 'bio', 'mentorship_types',
+}
+
+
+def _locked_field_response(locked_fields):
+    """400 response naming the identity fields an approved user tried to edit.
+
+    The whole payload is rejected (no partial application) so a mixed
+    safe+locked PATCH never half-applies.
+    """
+    return Response({
+        'success': False,
+        'error': {
+            'code': 400,
+            'type': 'IdentityFieldLocked',
+            'message': (
+                'Identity details are locked after approval. '
+                'Contact support to change them.'
+            ),
+            'details': {'locked_fields': sorted(locked_fields)},
+        },
+    }, status=status.HTTP_400_BAD_REQUEST)
+
 
 class EagletProfileView(APIView):
     """
@@ -143,16 +178,11 @@ class MentorProfileView(APIView):
     def patch(self, request):
         kyc, _ = MentorKYC.objects.get_or_create(user=request.user)
 
-        # Don't allow modifications to approved applications
+        # Approved profiles: safe fields editable, identity fields locked.
         if kyc.status == 'approved':
-            return Response({
-                'success': False,
-                'error': {
-                    'code': 400,
-                    'type': 'ApplicationLocked',
-                    'message': 'Cannot modify an approved profile.'
-                }
-            }, status=status.HTTP_400_BAD_REQUEST)
+            locked = set(request.data.keys()) - MENTOR_APPROVED_SAFE_FIELDS
+            if locked:
+                return _locked_field_response(locked)
 
         # Allow editing for draft, rejected, and requires_changes status
         if kyc.status in ['submitted', 'under_review']:
@@ -196,16 +226,11 @@ class MenteeProfileView(APIView):
     def patch(self, request):
         kyc, _ = MenteeKYC.objects.get_or_create(user=request.user)
 
-        # Don't allow modifications to approved applications
+        # Approved profiles: safe fields editable, identity fields locked.
         if kyc.status == 'approved':
-            return Response({
-                'success': False,
-                'error': {
-                    'code': 400,
-                    'type': 'ApplicationLocked',
-                    'message': 'Cannot modify an approved profile.'
-                }
-            }, status=status.HTTP_400_BAD_REQUEST)
+            locked = set(request.data.keys()) - MENTEE_APPROVED_SAFE_FIELDS
+            if locked:
+                return _locked_field_response(locked)
 
         # Allow editing for draft, rejected, and requires_changes status
         if kyc.status in ['submitted', 'under_review']:
