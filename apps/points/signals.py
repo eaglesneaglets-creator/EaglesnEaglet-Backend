@@ -141,15 +141,6 @@ def on_nest_membership_active(sender, instance, created, **kwargs):
     PointService.award_one_time_badge(instance.user, "first_nest_join")
 
 
-@receiver(post_save, sender="nests.NestResource")
-def on_first_resource_shared(sender, instance, created, **kwargs):
-    """Award 'Resource Eagle' on first resource upload (Eagle action — no role filter)."""
-    if not created:
-        return
-    from apps.points.services import PointService
-    PointService.award_one_time_badge(instance.uploaded_by, "first_resource_share")
-
-
 @receiver(post_save, sender="points.PointTransaction")
 def on_manual_point_received(sender, instance, created, **kwargs):
     """Award 'Mentor's Mark' when an Eaglet receives their first manual award."""
@@ -177,6 +168,28 @@ def on_early_assignment_submit(sender, instance, created, **kwargs):
     elif instance.submitted_at < assignment.due_date:
         from apps.points.services import PointService
         PointService.award_one_time_badge(instance.user, "early_bird")
+
+
+# ---------------------------------------------------------------------------
+# Summary-cache invalidation (perf audit B1/B2)
+# get_user_points_summary() is cached 60s; these receivers drop the cache the
+# moment new points or a badge land so the dashboard reflects awards instantly.
+# ---------------------------------------------------------------------------
+
+@receiver(post_save, sender="points.PointTransaction")
+def invalidate_summary_on_txn(sender, instance, created, **kwargs):
+    if not created:
+        return
+    from apps.points.services import PointService
+    PointService.invalidate_summary_cache(instance.user_id)
+
+
+@receiver(post_save, sender="points.UserBadge")
+def invalidate_summary_on_badge(sender, instance, created, **kwargs):
+    if not created:
+        return
+    from apps.points.services import PointService
+    PointService.invalidate_summary_cache(instance.user_id)
 
 
 @receiver(post_save, sender="content.ModuleAssignmentAttempt")

@@ -217,7 +217,10 @@ SPECTACULAR_SETTINGS = {
 # Session Security
 SESSION_COOKIE_AGE = 900  # 15 minutes
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
-SESSION_SAVE_EVERY_REQUEST = True
+# Perf audit B3: True forced a session write on every session-bearing request.
+# API auth is JWT (CookieJWTAuthentication) — Django sessions only back the
+# admin site, where a fixed (non-sliding) 15-min window is acceptable.
+SESSION_SAVE_EVERY_REQUEST = False
 
 
 # Email Configuration

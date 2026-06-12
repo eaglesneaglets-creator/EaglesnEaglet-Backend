@@ -34,7 +34,8 @@ def notify_on_mentorship_request(sender, instance, created, **kwargs):
             notification_type="mentorship_request",
             title="New Mentorship Request",
             message=f"{instance.eaglet.first_name} {instance.eaglet.last_name} wants to join your Nest \"{instance.nest.name}\".",
-            action_url=f"/nest/{instance.nest.id}/settings",
+            # FE route: requests queue for this nest (was /nest/{id}/settings → 404)
+            action_url=f"/eagle/nests/{instance.nest.id}/requests",
         )
     else:
         # Status changed → notify the Eaglet
@@ -44,7 +45,7 @@ def notify_on_mentorship_request(sender, instance, created, **kwargs):
                 notification_type="mentorship_approved",
                 title="Request Approved!",
                 message=f"Your request to join \"{instance.nest.name}\" has been approved. Welcome!",
-                action_url=f"/nest/{instance.nest.id}",
+                action_url=f"/eaglet/nest/{instance.nest.id}",  # was /nest/{id} → 404
             )
         elif instance.status == "rejected":
             NotificationService.create_notification(
@@ -52,7 +53,7 @@ def notify_on_mentorship_request(sender, instance, created, **kwargs):
                 notification_type="mentorship_rejected",
                 title="Request Declined",
                 message=f"Your request to join \"{instance.nest.name}\" was not approved.",
-                action_url="/nests/browse",
+                action_url="/eaglet/nest",  # discover tab (was /nests/browse → 404)
             )
 
 
@@ -62,12 +63,17 @@ def notify_on_points_awarded(sender, instance, created, **kwargs):
     if not created:
         return
 
+    # Role-aware leaderboard route (was /points → 404).
+    leaderboard = (
+        "/eagle/leaderboard" if getattr(instance.user, "role", "") == "eagle"
+        else "/eaglet/leaderboard"
+    )
     NotificationService.create_notification(
         recipient=instance.user,
         notification_type="points_awarded",
         title=f"+{instance.points} Points!",
         message=instance.description or f"You earned {instance.points} points.",
-        action_url="/points",
+        action_url=leaderboard,
     )
 
 
@@ -79,13 +85,16 @@ def notify_on_post_like(sender, instance, created, **kwargs):
     author = instance.post.author
     if author == instance.user:
         return  # Don't notify yourself
-    nest_prefix = "eagle" if author.role == author.Role.EAGLE else "eaglet"
+    # FE routes differ by role: /eagle/nests/{id} (plural) vs /eaglet/nest/{id}.
+    nest_path = (
+        "eagle/nests" if author.role == author.Role.EAGLE else "eaglet/nest"
+    )
     NotificationService.create_notification(
         recipient=author,
         notification_type=Notification.NotificationType.POST_LIKE,
         title="Someone liked your post",
         message=f"{instance.user.first_name} liked your post.",
-        action_url=f"/{nest_prefix}/nest/{instance.post.nest_id}",
+        action_url=f"/{nest_path}/{instance.post.nest_id}",
     )
 
 
@@ -97,11 +106,14 @@ def notify_on_post_comment(sender, instance, created, **kwargs):
     author = instance.post.author
     if author == instance.author:
         return  # Don't notify yourself
-    nest_prefix = "eagle" if author.role == author.Role.EAGLE else "eaglet"
+    # FE routes differ by role: /eagle/nests/{id} (plural) vs /eaglet/nest/{id}.
+    nest_path = (
+        "eagle/nests" if author.role == author.Role.EAGLE else "eaglet/nest"
+    )
     NotificationService.create_notification(
         recipient=author,
         notification_type=Notification.NotificationType.POST_COMMENT,
         title="New comment on your post",
         message=f"{instance.author.first_name} commented on your post.",
-        action_url=f"/{nest_prefix}/nest/{instance.post.nest_id}",
+        action_url=f"/{nest_path}/{instance.post.nest_id}",
     )

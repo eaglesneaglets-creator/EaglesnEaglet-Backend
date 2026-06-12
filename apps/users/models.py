@@ -505,8 +505,8 @@ class UserProfile(TimestampMixin):
     notification_sms = models.BooleanField(default=False)
     notification_push = models.BooleanField(default=True)
 
-    # Timezone preference
-    timezone = models.CharField(max_length=50, default='Africa/Lagos')
+    # Timezone preference — platform home is Accra, Ghana (GMT/UTC+0).
+    timezone = models.CharField(max_length=50, default='Africa/Accra')
 
     class Meta:
         db_table = 'user_profiles'
