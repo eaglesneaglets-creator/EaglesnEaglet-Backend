@@ -384,3 +384,6 @@ SECURITY = {
     # OAuth state nonce validity window (in seconds)
     'OAUTH_STATE_TIMEOUT_SECONDS': int(os.environ.get('OAUTH_STATE_TIMEOUT_SECONDS', 600)),
 }
+
+# Non-platform paths (/.env, wp-config probes, etc.) — per-IP cap/minute
+PROBE_FLOOD_RATE_LIMIT_PER_MIN = int(os.environ.get('PROBE_FLOOD_RATE_LIMIT_PER_MIN', '30'))
