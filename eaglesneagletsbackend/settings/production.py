@@ -438,3 +438,4 @@ REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'].update({
 
 # RateLimitByIPMiddleware ceiling on /auth/login etc.
 SENSITIVE_RATE_LIMIT_PER_MIN = int(_os.environ.get('SENSITIVE_RATE_LIMIT_PER_MIN', '60'))
+PROBE_FLOOD_RATE_LIMIT_PER_MIN = int(_os.environ.get('PROBE_FLOOD_RATE_LIMIT_PER_MIN', '30'))

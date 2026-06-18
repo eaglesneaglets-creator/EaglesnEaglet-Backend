@@ -5,8 +5,10 @@ Adds security headers and performs security checks on all requests.
 """
 
 import logging
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, JsonResponse
 import re
+
+from core.middleware.request_noise import is_non_platform_path
 
 logger = logging.getLogger('django.security')
 
@@ -118,6 +120,29 @@ class RateLimitByIPMiddleware:
                 )
 
             # Increment counter with 60 second expiry
+            cache.set(cache_key, request_count + 1, 60)
+
+        elif is_non_platform_path(path):
+            # Background scanners hammer random paths (.env, wp-config, etc.).
+            # Cap volume per IP so Django/Railway aren't flooded; no per-hit log line.
+            from django.conf import settings as _s
+            ip = get_client_ip(request)
+            cache_key = f'probe_flood:{ip}'
+            request_count = cache.get(cache_key, 0)
+            limit = int(getattr(_s, 'PROBE_FLOOD_RATE_LIMIT_PER_MIN', 30))
+
+            if request_count >= limit:
+                return JsonResponse(
+                    {
+                        'success': False,
+                        'error': {
+                            'code': 429,
+                            'message': 'Too many requests. Please try again later.',
+                        },
+                    },
+                    status=429,
+                )
+
             cache.set(cache_key, request_count + 1, 60)
 
         return self.get_response(request)

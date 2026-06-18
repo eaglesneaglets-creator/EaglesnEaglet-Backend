@@ -241,3 +241,4 @@ REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'].update({
 # E2E / dev: raise RateLimitByIPMiddleware ceiling on sensitive endpoints
 # (login/register/password-reset/verify) so headed Playwright suites don't 403.
 SENSITIVE_RATE_LIMIT_PER_MIN = 200
+PROBE_FLOOD_RATE_LIMIT_PER_MIN = 500
