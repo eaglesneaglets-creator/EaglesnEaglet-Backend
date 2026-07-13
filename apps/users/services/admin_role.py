@@ -320,6 +320,10 @@ def revoke_admin(*, actor, target_id, reason: str) -> User:
         raise AdminRoleError("Use the self-revoke endpoint to revoke your own admin.")
     if not target.is_platform_staff:
         raise AdminRoleError("Target is not an admin.")
+    if target.is_superuser:
+        raise AdminRoleError(
+            "Superadmin accounts cannot be revoked via team management."
+        )
 
     if _admin_pool_count(exclude_user_id=target.id) < 1:
         raise LastAdminError("Cannot revoke — the platform would have no admins.")
@@ -340,6 +344,11 @@ def revoke_admin(*, actor, target_id, reason: str) -> User:
 def self_revoke_admin(*, user, reason: str = "") -> User:
     if not user.is_platform_staff:
         raise AdminRoleError("You do not hold admin privileges.")
+    if user.is_superuser:
+        raise AdminRoleError(
+            "Superadmin accounts cannot step down via this endpoint. "
+            "Transfer superadmin to another admin first."
+        )
     if _admin_pool_count(exclude_user_id=user.id) < 1:
         raise LastAdminError("Cannot revoke — you are the only admin.")
     return _revoke_admin(
@@ -351,22 +360,75 @@ def self_revoke_admin(*, user, reason: str = "") -> User:
     )
 
 
+def transfer_superadmin(*, actor, successor_id, reason: str = "") -> User:
+    """
+    Promote ``successor_id`` to superadmin, then fully step down ``actor``.
+
+    Ensures the platform always retains at least one superadmin before the
+    outgoing superadmin loses platform privileges.
+    """
+    if not actor.is_superuser:
+        raise AdminRoleError("Only superadmins can transfer the superadmin role.")
+
+    reason = (reason or "").strip()[:2000]
+
+    try:
+        successor = User.objects.get(pk=successor_id)
+    except User.DoesNotExist as exc:
+        raise AdminRoleError("Successor not found.") from exc
+
+    if successor.id == actor.id:
+        raise AdminRoleError("Choose another admin as your successor.")
+    if not successor.is_platform_staff:
+        raise AdminRoleError("Successor must be a current platform admin.")
+    if successor.is_superuser:
+        raise AdminRoleError("Successor is already a superadmin.")
+
+    with transaction.atomic():
+        successor.is_superuser = True
+        successor.is_staff = True
+        successor.save(update_fields=["is_superuser", "is_staff", "updated_at"])
+
+        AdminRoleAudit.objects.create(
+            actor=actor,
+            target=successor,
+            action=AdminRoleAudit.Action.GRANTED,
+            source=AdminRoleAudit.Source.MANUAL,
+            reason=(
+                f"Promoted to superadmin via transfer from {actor.email}."
+                + (f" {reason}" if reason else "")
+            ).strip(),
+        )
+
+        actor.is_superuser = False
+        actor.save(update_fields=["is_superuser", "updated_at"])
+
+        _revoke_admin(
+            target=actor,
+            actor=actor,
+            action=AdminRoleAudit.Action.SELF_REVOKED,
+            source=AdminRoleAudit.Source.MANUAL,
+            reason=(
+                f"Stepped down after transferring superadmin to {successor.email}."
+                + (f" {reason}" if reason else "")
+            ).strip(),
+        )
+
+    _notify_promoted(target=successor)
+    return successor
+
+
 # ─── Internals ───────────────────────────────────────────────────────────────
 
 def _grant_admin(*, target, actor, source, reason: str) -> None:
     """
-    Promote ``target`` and write the audit row. Idempotent on the User
-    fields; AlreadyAdminError caller-side prevents duplicate audit entries.
+    Promote ``target`` to platform admin (not superadmin). Invited admins and
+    EOI approvals receive ``is_platform_staff`` only — bootstrap superadmins
+    are created via ``create_admin`` / ``create_superuser``.
     """
     if not target.is_platform_staff:
         target.is_platform_staff = True
-        # is_staff = True so the user can also access Django admin if needed.
-        # Existing pure admins already have it set, so this is a no-op for them.
-        if not target.is_staff:
-            target.is_staff = True
-            target.save(update_fields=["is_platform_staff", "is_staff", "updated_at"])
-        else:
-            target.save(update_fields=["is_platform_staff", "updated_at"])
+        target.save(update_fields=["is_platform_staff", "updated_at"])
 
     AdminRoleAudit.objects.create(
         actor=actor,
@@ -398,9 +460,31 @@ def _revoke_admin(*, target, actor, action, source, reason: str) -> User:
         reason=reason or "",
     )
 
+    _blacklist_all_refresh_tokens(target)
+
     cache.delete(first_admin_session_key(target.id))
     _notify_demoted(target=target, actor=actor)
     return target
+
+
+def _blacklist_all_refresh_tokens(user) -> None:
+    """
+    Revoke every outstanding refresh token for ``user`` so a demoted admin
+    cannot renew any session on any device. Access tokens remain valid until
+    their short (15-min) lifetime expires — simplejwt does not blacklist
+    stateless access tokens. Runs inside the caller's atomic block; failures
+    are swallowed so token bookkeeping never blocks the privilege change.
+    """
+    try:
+        from rest_framework_simplejwt.token_blacklist.models import (
+            BlacklistedToken,
+            OutstandingToken,
+        )
+    except ImportError:  # pragma: no cover - blacklist app always installed
+        return
+
+    for token in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=token)
 
 
 # ─── Notifications ───────────────────────────────────────────────────────────

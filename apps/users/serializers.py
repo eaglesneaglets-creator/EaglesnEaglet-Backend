@@ -134,6 +134,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     full_name = serializers.CharField(read_only=True)
     kyc_status = serializers.SerializerMethodField()
+    has_password = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -142,15 +143,19 @@ class UserSerializer(serializers.ModelSerializer):
             'phone_number', 'role', 'status', 'avatar', 'bio',
             'is_email_verified', 'is_phone_verified', 'date_of_birth',
             'profile_visibility',
-            'is_staff', 'is_superuser', 'is_platform_staff', 'kyc_status',
+            'is_staff', 'is_superuser', 'is_platform_staff', 'has_password',
+            'kyc_status',
             'created_at', 'last_login',
         ]
         read_only_fields = [
             'id', 'email', 'role', 'status', 'is_email_verified',
             'is_phone_verified', 'is_staff', 'is_superuser',
-            'is_platform_staff', 'kyc_status',
+            'is_platform_staff', 'has_password', 'kyc_status',
             'created_at', 'last_login',
         ]
+
+    def get_has_password(self, obj):
+        return obj.has_usable_password()
 
     def get_kyc_status(self, obj):
         """Get KYC status — uses prefetched relation if available to avoid N+1."""
@@ -278,12 +283,14 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 class PasswordChangeSerializer(serializers.Serializer):
     """
-    Serializer for changing password.
+    Change password when the account already has one, or set an initial
+    password for OAuth-only users (no usable password on file).
     """
 
     old_password = serializers.CharField(
-        required=True,
-        style={'input_type': 'password'}
+        required=False,
+        allow_blank=True,
+        style={'input_type': 'password'},
     )
     new_password = serializers.CharField(
         required=True,
@@ -305,7 +312,17 @@ class PasswordChangeSerializer(serializers.Serializer):
             })
 
         user = self.context['request'].user
-        if not user.check_password(attrs['old_password']):
+        setting_initial_password = not user.has_usable_password()
+
+        if setting_initial_password:
+            return attrs
+
+        old_password = attrs.get('old_password') or ''
+        if not old_password:
+            raise serializers.ValidationError({
+                'old_password': 'Current password is required.'
+            })
+        if not user.check_password(old_password):
             raise serializers.ValidationError({
                 'old_password': 'Current password is incorrect.'
             })

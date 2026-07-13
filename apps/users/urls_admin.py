@@ -24,6 +24,11 @@ urlpatterns = [
     path("team/", views.team_view, name="team"),
     path("team/<uuid:user_id>/revoke/", views.revoke_team_member_view, name="revoke-member"),
     path("me/revoke/", views.self_revoke_view, name="self-revoke"),
+    path(
+        "me/transfer-superadmin/",
+        views.transfer_superadmin_view,
+        name="transfer-superadmin",
+    ),
 
     path("audit/", views.audit_view, name="audit"),
 ]
