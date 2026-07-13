@@ -305,6 +305,34 @@ class TestAuthenticationAPI:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_set_password_without_old_for_oauth_user(self, api_client, eagle_user):
+        """Google-only users can set an initial password without old_password."""
+        eagle_user.set_unusable_password()
+        eagle_user.google_id = 'google-oauth-id'
+        eagle_user.save(update_fields=['password', 'google_id'])
+
+        api_client.force_authenticate(user=eagle_user)
+        url = reverse('users:password-change')
+        response = api_client.post(url, {
+            'new_password': 'NewSecurePass123!',
+            'new_password_confirm': 'NewSecurePass123!',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK
+        assert 'set successfully' in response.data['message'].lower()
+        eagle_user.refresh_from_db()
+        assert eagle_user.has_usable_password()
+        assert eagle_user.check_password('NewSecurePass123!')
+
+    def test_change_password_requires_old_when_password_exists(self, authenticated_client, eagle_user):
+        url = reverse('users:password-change')
+        response = authenticated_client.post(url, {
+            'new_password': 'NewSecurePass123!',
+            'new_password_confirm': 'NewSecurePass123!',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
 
 # =============================================================================
 # MENTOR PROFILE/KYC TESTS

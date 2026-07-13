@@ -23,6 +23,7 @@ from ..serializers_admin import (
     EligibilitySerializer,
     RejectNoteSerializer,
     RevokeAdminSerializer,
+    TransferSuperadminSerializer,
     SendInviteSerializer,
     SubmitEOISerializer,
     TeamMemberSerializer,
@@ -38,6 +39,14 @@ class IsPlatformAdmin(BasePermission):
     def has_permission(self, request, view):
         u = request.user
         return bool(u and u.is_authenticated and u.is_admin)
+
+
+class IsSuperAdmin(BasePermission):
+    """Bootstrap superadmin only — full admin-team management privileges."""
+
+    def has_permission(self, request, view):
+        u = request.user
+        return bool(u and u.is_authenticated and u.is_superuser)
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -141,7 +150,7 @@ def my_request_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, IsPlatformAdmin])
+@permission_classes([IsAuthenticated, IsSuperAdmin])
 def approve_request_view(request, request_id):
     ser = DecisionNoteSerializer(data=request.data)
     ser.is_valid(raise_exception=True)
@@ -160,7 +169,7 @@ def approve_request_view(request, request_id):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, IsPlatformAdmin])
+@permission_classes([IsAuthenticated, IsSuperAdmin])
 def reject_request_view(request, request_id):
     ser = RejectNoteSerializer(data=request.data)
     ser.is_valid(raise_exception=True)
@@ -181,7 +190,7 @@ def reject_request_view(request, request_id):
 # ─── Invites ─────────────────────────────────────────────────────────────────
 
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated, IsPlatformAdmin])
+@permission_classes([IsAuthenticated, IsSuperAdmin])
 def invites_collection_view(request):
     if request.method == "POST":
         ser = SendInviteSerializer(data=request.data)
@@ -211,7 +220,7 @@ def invites_collection_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, IsPlatformAdmin])
+@permission_classes([IsAuthenticated, IsSuperAdmin])
 def revoke_invite_view(request, invite_id):
     try:
         invite = svc.revoke_invite(actor=request.user, invite_id=invite_id)
@@ -265,6 +274,7 @@ def team_view(request):
             "full_name": admin.full_name,
             "role": admin.role,
             "is_platform_staff": admin.is_platform_staff,
+            "is_superuser": admin.is_superuser,
             "is_stacked": admin.is_stacked_admin,
             "promoted_at": grant.get("created_at"),
             "promoted_source": grant.get("source"),
@@ -277,7 +287,7 @@ def team_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated, IsPlatformAdmin])
+@permission_classes([IsAuthenticated, IsSuperAdmin])
 def revoke_team_member_view(request, user_id):
     if str(request.user.id) == str(user_id):
         return _err(
@@ -312,10 +322,26 @@ def self_revoke_view(request):
     return _ok({"revoked": True})
 
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsSuperAdmin])
+def transfer_superadmin_view(request):
+    ser = TransferSuperadminSerializer(data=request.data)
+    ser.is_valid(raise_exception=True)
+    try:
+        successor = svc.transfer_superadmin(
+            actor=request.user,
+            successor_id=ser.validated_data["successor_id"],
+            reason=ser.validated_data.get("reason", ""),
+        )
+    except svc.AdminRoleError as e:
+        return _map_error(e)
+    return _ok({"successor_id": str(successor.id), "transferred": True})
+
+
 # ─── Audit feed ──────────────────────────────────────────────────────────────
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, IsPlatformAdmin])
+@permission_classes([IsAuthenticated, IsSuperAdmin])
 def audit_view(request):
     """Last 200 entries; pagination can be added if the table grows."""
     qs = (

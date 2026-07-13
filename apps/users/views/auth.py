@@ -543,11 +543,16 @@ class PasswordChangeView(APIView):
             context={'request': request}
         )
         serializer.is_valid(raise_exception=True)
+        setting_initial = not request.user.has_usable_password()
         serializer.save()
 
         return Response({
             'success': True,
-            'message': 'Password changed successfully.'
+            'message': (
+                'Password set successfully.'
+                if setting_initial
+                else 'Password changed successfully.'
+            ),
         })
 
 

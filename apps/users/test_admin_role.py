@@ -48,8 +48,13 @@ def _approve_kyc(user, *, days_ago: int = 60):
 
 @pytest.fixture
 def admin_user():
-    """Pure admin with platform-staff flag set."""
-    u = _make_user("admin@e.test", role="admin", is_platform_staff=True)
+    """Bootstrap superadmin — full admin-team management privileges."""
+    u = _make_user(
+        "admin@e.test",
+        role="admin",
+        is_platform_staff=True,
+        is_superuser=True,
+    )
     u.is_staff = True
     u.save(update_fields=["is_staff"])
     return u
@@ -57,10 +62,13 @@ def admin_user():
 
 @pytest.fixture
 def second_admin():
-    u = _make_user("admin2@e.test", role="admin", is_platform_staff=True)
-    u.is_staff = True
-    u.save(update_fields=["is_staff"])
-    return u
+    """Invited platform admin (not superuser)."""
+    return _make_user(
+        "admin2@e.test",
+        role="admin",
+        is_platform_staff=True,
+        is_superuser=False,
+    )
 
 
 @pytest.fixture
@@ -219,26 +227,85 @@ def test_reject_eoi_marks_rejected(admin_user, eligible_mentor):
 # ─── Revocation ──────────────────────────────────────────────────────────────
 
 def test_self_revoke_drops_flag(admin_user, second_admin):
-    """With two admins, self-revoke succeeds."""
-    svc.self_revoke_admin(user=admin_user, reason="stepping back")
-    admin_user.refresh_from_db()
-    assert admin_user.is_platform_staff is False
+    """With two admins, a platform admin can self-revoke."""
+    svc.self_revoke_admin(user=second_admin, reason="stepping back")
+    second_admin.refresh_from_db()
+    assert second_admin.is_platform_staff is False
     audit = AdminRoleAudit.objects.filter(
-        target=admin_user, action="self_revoked"
+        target=second_admin, action="self_revoked"
     ).first()
     assert audit is not None
 
 
-def test_self_revoke_last_admin_blocked(admin_user):
-    """admin_user is the only admin → self-revoke must fail."""
+def test_self_revoke_blacklists_all_refresh_tokens(admin_user, second_admin):
+    """Stepping down must revoke every outstanding session for the actor."""
+    from rest_framework_simplejwt.tokens import RefreshToken
+    from rest_framework_simplejwt.token_blacklist.models import (
+        BlacklistedToken,
+        OutstandingToken,
+    )
+
+    # Simulate two active devices for the demoting admin.
+    RefreshToken.for_user(second_admin)
+    RefreshToken.for_user(second_admin)
+    outstanding = OutstandingToken.objects.filter(user=second_admin)
+    assert outstanding.count() == 2
+    assert not BlacklistedToken.objects.filter(token__in=outstanding).exists()
+
+    svc.self_revoke_admin(user=second_admin, reason="stepping back")
+
+    assert BlacklistedToken.objects.filter(
+        token__user=second_admin
+    ).count() == 2
+
+
+def test_self_revoke_last_admin_blocked(second_admin):
+    """Only platform admin → self-revoke must fail."""
     with pytest.raises(svc.LastAdminError):
+        svc.self_revoke_admin(user=second_admin, reason="x")
+    second_admin.refresh_from_db()
+    assert second_admin.is_platform_staff is True
+
+
+def test_superadmin_self_revoke_blocked(admin_user, second_admin):
+    with pytest.raises(svc.AdminRoleError, match="Superadmin"):
         svc.self_revoke_admin(user=admin_user, reason="x")
+
+
+def test_transfer_superadmin_promotes_successor_and_steps_down(admin_user, second_admin):
+    successor = svc.transfer_superadmin(
+        actor=admin_user,
+        successor_id=second_admin.id,
+        reason="retiring from platform ops",
+    )
+    assert successor.id == second_admin.id
+
     admin_user.refresh_from_db()
-    assert admin_user.is_platform_staff is True
+    second_admin.refresh_from_db()
+    assert admin_user.is_superuser is False
+    assert admin_user.is_platform_staff is False
+    assert second_admin.is_superuser is True
+    assert second_admin.is_platform_staff is True
+
+    assert AdminRoleAudit.objects.filter(
+        target=second_admin, action="granted"
+    ).exists()
+    assert AdminRoleAudit.objects.filter(
+        target=admin_user, action="self_revoked"
+    ).exists()
+
+
+def test_transfer_superadmin_requires_other_admin(admin_user):
+    with pytest.raises(svc.AdminRoleError, match="Choose another"):
+        svc.transfer_superadmin(
+            actor=admin_user,
+            successor_id=admin_user.id,
+            reason="self transfer",
+        )
 
 
 def test_demote_last_admin_blocked(admin_user, second_admin):
-    """Demote one admin so only `admin_user` remains, then try to demote them."""
+    """Demote platform admin; superadmin cannot be revoked via team management."""
     svc.revoke_admin(
         actor=admin_user, target_id=second_admin.id,
         reason="restructuring the team",
@@ -246,10 +313,10 @@ def test_demote_last_admin_blocked(admin_user, second_admin):
     second_admin.refresh_from_db()
     assert second_admin.is_platform_staff is False
 
-    with pytest.raises(svc.LastAdminError):
+    with pytest.raises(svc.AdminRoleError, match="Superadmin"):
         svc.revoke_admin(
             actor=second_admin, target_id=admin_user.id,
-            reason="trying to demote last admin",
+            reason="trying to demote superadmin",
         )
 
 
@@ -428,3 +495,28 @@ def test_backfill_marks_existing_admin(admin_user):
     # Manually-created via fixture doesn't have backfill audit row, so check that
     # NEW admin grant rows are creatable on top of that baseline.
     assert AdminRoleAudit.objects.filter(target=admin_user).count() >= 0
+
+
+def test_invite_grant_does_not_set_is_staff(admin_user, eligible_mentor):
+    invite, raw_token = svc.send_invite(actor=admin_user, email=eligible_mentor.email)
+    svc.accept_invite(user=eligible_mentor, token=raw_token)
+    eligible_mentor.refresh_from_db()
+    assert eligible_mentor.is_platform_staff is True
+    assert eligible_mentor.is_staff is False
+    assert eligible_mentor.is_superuser is False
+
+
+def test_platform_admin_cannot_send_invite(api, second_admin, admin_user):
+    api.force_authenticate(user=second_admin)
+    url = reverse("users_admin_role:invites")
+    res = api.post(url, {"email": "blocked@e.test"}, format="json")
+    assert res.status_code == 403
+
+
+def test_auth_me_includes_has_password(api, eligible_mentor):
+    eligible_mentor.set_unusable_password()
+    eligible_mentor.save(update_fields=["password"])
+    api.force_authenticate(user=eligible_mentor)
+    res = api.get("/api/v1/auth/me/")
+    assert res.status_code == 200
+    assert res.json()["data"]["has_password"] is False

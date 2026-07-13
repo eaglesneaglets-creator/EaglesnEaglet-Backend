@@ -74,6 +74,11 @@ class RevokeAdminSerializer(serializers.Serializer):
     reason = serializers.CharField(min_length=10, max_length=2000)
 
 
+class TransferSuperadminSerializer(serializers.Serializer):
+    successor_id = serializers.UUIDField()
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+
 class AdminRoleAuditSerializer(serializers.ModelSerializer):
     actor = _UserSummarySerializer(read_only=True)
     target = _UserSummarySerializer(read_only=True)
@@ -99,6 +104,7 @@ class TeamMemberSerializer(serializers.Serializer):
     full_name = serializers.CharField()
     role = serializers.CharField()
     is_platform_staff = serializers.BooleanField()
+    is_superuser = serializers.BooleanField()
     is_stacked = serializers.BooleanField()
     promoted_at = serializers.DateTimeField(allow_null=True)
     promoted_source = serializers.CharField(allow_null=True)
