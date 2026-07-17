@@ -17,7 +17,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSet
 
-from core.permissions import IsAdmin
+from core.permissions import IsAdmin, IsSuperAdmin
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +91,7 @@ class ProductViewSet(ViewSet):
     def list(self, request):
         category_slug = request.query_params.get("category")
         search = request.query_params.get("search")
-        is_admin = request.user.is_authenticated and (
-            request.user.is_staff or request.user.is_superuser
-            or getattr(request.user, "role", None) == "admin"
-        )
+        is_admin = request.user.is_authenticated and request.user.is_admin
         if is_admin:
             qs = ProductModel.objects.filter(
                 status__in=[ProductModel.Status.PUBLISHED, ProductModel.Status.DRAFT]
@@ -255,8 +252,11 @@ class AdminOrderViewSet(ViewSet):
     GET   /store/admin/orders/                     — paginated list (admin only)
     GET   /store/admin/orders/<id>/                — full detail with status history
     PATCH /store/admin/orders/<id>/update-status/  — transition status, optionally with a note
+
+    Order management is superadmin-only: scoped (dual-role) admins manage the
+    catalog but must not see customer orders / fulfilment data.
     """
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
 
     def list(self, request):
         from django.db.models import Q

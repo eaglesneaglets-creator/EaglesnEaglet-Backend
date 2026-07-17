@@ -8,6 +8,7 @@ import gzip
 import logging
 import os
 import subprocess
+from urllib.parse import quote
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
@@ -106,7 +107,9 @@ def send_verification_email(self, user_id, raw_token):
         subject_key='verification',
         skip_check=lambda u: u.is_email_verified,
         context_builder=lambda u, url: {
-            'verification_url': f"{url}/verify-email?token={raw_token}",
+            # email is appended (URL-encoded) so the frontend can prefill the
+            # login form after verifying — one less field for the user to type.
+            'verification_url': f"{url}/verify-email?token={raw_token}&email={quote(u.email)}",
         },
     )
 

@@ -7,6 +7,8 @@ from .roles import (
     IsNestOwner,
     IsNestMember,
     IsNestOwnerFromURL,
+    IsPlatformAdmin,
+    IsSuperAdmin,
 )
 
 __all__ = [
@@ -17,4 +19,6 @@ __all__ = [
     'IsNestOwner',
     'IsNestMember',
     'IsNestOwnerFromURL',
+    'IsPlatformAdmin',
+    'IsSuperAdmin',
 ]

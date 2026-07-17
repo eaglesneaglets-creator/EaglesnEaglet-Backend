@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSet
 
-from core.permissions.roles import IsAdmin, IsEagleOrAdmin
+from core.permissions.roles import IsEagleOrAdmin, IsSuperAdmin
 
 from .models import Donation
 from .serializers import (
@@ -343,9 +343,11 @@ class AdminDonationStatsView(APIView):
     GET /api/v1/donations/admin/stats/
 
     Aggregate donation analytics for the admin dashboard.
+
+    Financial data — superadmin only. Scoped (dual-role) admins are denied.
     """
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
 
     def get(self, request):
         from .serializers import DonationSerializer

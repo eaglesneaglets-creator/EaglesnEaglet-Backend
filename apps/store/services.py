@@ -22,9 +22,7 @@ class StoreService:
     @staticmethod
     def _is_admin(user) -> bool:
         """Check admin status consistently with IsAdmin permission class."""
-        if user.is_staff or user.is_superuser:
-            return True
-        return getattr(user, "role", None) == "admin"
+        return bool(getattr(user, "is_admin", False))
 
     # ------------------------------------------------------------------
     # Categories

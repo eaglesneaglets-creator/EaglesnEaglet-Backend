@@ -38,10 +38,23 @@ def _seed_levels(db):
 
 @pytest.fixture
 def admin_user(db):
+    # Level-threshold config is platform settings — superadmin-only. This
+    # fixture is a superadmin (is_superuser); a scoped platform-admin is
+    # covered by test_scoped_platform_admin_forbidden below.
     return User.objects.create_user(
         email="admin-l@test.com", password="pass",
         role=User.Role.ADMIN, first_name="A", last_name="D",
-        is_staff=True,
+        is_staff=True, is_superuser=True,
+    )
+
+
+@pytest.fixture
+def scoped_platform_admin(db):
+    """Dual-role admin: platform staff, NOT superuser — must be forbidden."""
+    return User.objects.create_user(
+        email="scoped-l@test.com", password="pass",
+        role=User.Role.EAGLE, first_name="S", last_name="P",
+        is_platform_staff=True,
     )
 
 
@@ -92,6 +105,13 @@ def test_eaglet_forbidden(auth_client, eaglet_user):
 def test_eagle_forbidden(auth_client, eagle_user):
     resp = auth_client(eagle_user).get(URL)
     assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+def test_scoped_platform_admin_forbidden(auth_client, scoped_platform_admin):
+    # Level config is superadmin-only; a scoped (dual-role) admin is denied.
+    resp = auth_client(scoped_platform_admin).get(URL)
+    assert resp.status_code == 403
 
 
 @pytest.mark.django_db

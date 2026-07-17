@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSet
 
 from core.pagination import StandardResultsSetPagination
-from core.permissions import IsEagleOrAdmin, IsNestMember, IsNestOwnerFromURL
+from core.permissions import IsEagleOrAdmin, IsNestMember, IsNestOwnerFromURL, IsSuperAdmin
 
 from .serializers import (
     NestListSerializer,
@@ -29,7 +29,7 @@ from .serializers import (
     NestEventSerializer,
     NestEventCreateSerializer,
 )
-from .permissions import HasActiveProgram, IsPlatformAdmin
+from .permissions import HasActiveProgram
 from .services import NestService, MembershipService, CommunityService
 
 
@@ -935,9 +935,12 @@ class MenteeLevelConfigViewSet(ViewSet):
     Locked: cannot create/delete rows (fixed 5 tiers); cannot disable
     `unlocks_mentor_application` on level 5; points_required must stay
     monotonically non-decreasing across levels.
+
+    Platform configuration (Admin Settings) — superadmin-only. Scoped
+    (dual-role) admins must not edit level thresholds.
     """
 
-    permission_classes = [IsAuthenticated, IsPlatformAdmin]
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
 
     def list(self, request):
         from .models_program import MenteeLevelConfig
