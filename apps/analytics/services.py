@@ -292,7 +292,9 @@ class AnalyticsService:
         month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         user_stats = User.objects.aggregate(
             total=Count('id'),
-            new_this_month=Count('id', filter=Q(date_joined__gte=month_start)),
+            # Custom User model has no `date_joined` (Django builtin); it uses
+            # `created_at`. Using the wrong field 500'd the admin dashboard.
+            new_this_month=Count('id', filter=Q(created_at__gte=month_start)),
         )
 
         # Role breakdown — one query

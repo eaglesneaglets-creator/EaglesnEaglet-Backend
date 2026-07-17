@@ -683,8 +683,22 @@ class TestAdminStats:
         response = api_client.get("/api/v1/donations/admin/stats/")
         assert response.status_code == 403
 
-    def test_admin_stats_as_admin(self, api_client, admin_user):
-        api_client.force_authenticate(user=admin_user)
+    def test_admin_stats_forbidden_for_scoped_admin(self, api_client, user_factory):
+        # Donations are financial data — superadmin only. A scoped (dual-role)
+        # platform admin is denied.
+        scoped = user_factory(
+            email="scoped-donations@test.com", role="eagle", is_platform_staff=True,
+        )
+        api_client.force_authenticate(user=scoped)
+        response = api_client.get("/api/v1/donations/admin/stats/")
+        assert response.status_code == 403
+
+    def test_admin_stats_as_superadmin(self, api_client, user_factory):
+        superadmin = user_factory(
+            email="super-donations@test.com", role="admin",
+            is_superuser=True, is_staff=True,
+        )
+        api_client.force_authenticate(user=superadmin)
         response = api_client.get("/api/v1/donations/admin/stats/")
         assert response.status_code == 200
         data = response.data["data"]

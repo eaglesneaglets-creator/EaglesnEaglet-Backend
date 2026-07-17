@@ -36,7 +36,7 @@ class AnalyticsViewSet(ViewSet):
 
     def admin_dashboard(self, request):
         """Admin dashboard stats (admin only, caching handled by AnalyticsService)."""
-        if not (request.user.is_staff or request.user.is_superuser):
+        if not request.user.is_admin:
             return Response(
                 {"success": False, "error": {"message": "Admin access required."}},
                 status=403,
@@ -48,7 +48,7 @@ class AnalyticsViewSet(ViewSet):
         """Analytics for a specific Nest (owner or member only)."""
         from apps.nests.models import Nest, NestMembership
 
-        if not (request.user.is_staff or request.user.is_superuser):
+        if not request.user.is_admin:
             is_owner = Nest.objects.filter(pk=pk, eagle=request.user).exists()
             is_member = NestMembership.objects.filter(
                 nest_id=pk, user=request.user, status="active"

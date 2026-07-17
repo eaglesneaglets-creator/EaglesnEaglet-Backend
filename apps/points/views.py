@@ -12,7 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
 
-from core.permissions import IsEagleOrAdmin, IsAdmin
+from core.permissions import IsEagleOrAdmin, IsSuperAdmin
 
 from .serializers import (
     PointConfigurationSerializer,
@@ -172,9 +172,12 @@ class BadgeViewSet(ViewSet):
 
 
 class PointConfigViewSet(ViewSet):
-    """Admin-only point configuration management."""
+    """Platform points configuration — an Admin Settings surface.
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    Superadmin-only: scoped (dual-role) admins must not edit platform config.
+    """
+
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
 
     def list(self, request):
         """List all point configurations."""

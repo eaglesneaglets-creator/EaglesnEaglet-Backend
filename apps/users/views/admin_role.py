@@ -11,8 +11,12 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, BasePermission
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+# Canonical tier permission classes now live in core.permissions (promoted from
+# this module) so every app shares one source of truth for the admin tiers.
+from core.permissions.roles import IsPlatformAdmin, IsSuperAdmin
 
 from ..models_admin import AdminInvite, AdminRoleAudit, AdminRoleRequest
 from ..serializers_admin import (
@@ -31,22 +35,6 @@ from ..serializers_admin import (
 from ..services import admin_role as svc
 
 User = get_user_model()
-
-
-class IsPlatformAdmin(BasePermission):
-    """Allow only users where User.is_admin is True (covers stacked Eagles)."""
-
-    def has_permission(self, request, view):
-        u = request.user
-        return bool(u and u.is_authenticated and u.is_admin)
-
-
-class IsSuperAdmin(BasePermission):
-    """Bootstrap superadmin only — full admin-team management privileges."""
-
-    def has_permission(self, request, view):
-        u = request.user
-        return bool(u and u.is_authenticated and u.is_superuser)
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
