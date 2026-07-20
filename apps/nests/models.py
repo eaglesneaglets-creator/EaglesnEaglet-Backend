@@ -28,10 +28,24 @@ class Nest(SoftDeleteMixin, TimestampMixin, models.Model):
         PUBLIC = "public", "Public"
         INVITATION_ONLY = "invitation_only", "Invitation Only"
 
+    class Category(models.TextChoices):
+        FAITH = "faith", "Faith & Profession"
+        LEADERSHIP = "leadership", "Leadership"
+        FINANCE = "finance", "Finance & Stewardship"
+        RELATIONSHIPS = "relationships", "Relationships"
+        CAREER = "career", "Career"
+        OTHER = "other", "Other"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=150)
     slug = models.SlugField(max_length=170, unique=True, db_index=True)
     description = models.TextField(blank=True)
+    category = models.CharField(
+        max_length=20,
+        choices=Category.choices,
+        default=Category.OTHER,
+        db_index=True,
+    )
     industry_focus = models.CharField(max_length=100, blank=True)
     banner_image = models.URLField(max_length=500, blank=True)
     eagle = models.ForeignKey(
