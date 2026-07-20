@@ -15,7 +15,13 @@ class UserMinimalSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "first_name", "last_name", "full_name", "role"]
+        # is_platform_staff + is_superuser let the FE label admins (incl.
+        # stacked mentor-admins whose role stays 'eagle') correctly in the
+        # chat header. Without these the header can only guess Mentor/Mentee.
+        fields = [
+            "id", "first_name", "last_name", "full_name", "role",
+            "is_platform_staff", "is_superuser",
+        ]
 
 
 class MessageSerializer(serializers.ModelSerializer):

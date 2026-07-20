@@ -10,3 +10,8 @@ class NestsConfig(AppConfig):
         # Wire signals (plan 14-02): mirror ProgramEnrollment status onto
         # NestMembership so existing community-access code keeps working.
         from . import signals  # noqa: F401
+
+        # Phase 27-01: NestActivity audit model + its recording signals.
+        # Importing here guarantees the model is registered at app-ready.
+        from . import models_activity  # noqa: F401
+        from . import signals_activity  # noqa: F401
