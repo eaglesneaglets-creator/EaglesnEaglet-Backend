@@ -78,14 +78,16 @@ class NestService:
     @staticmethod
     def get_eagle_nests(eagle):
         """Return all Nests owned by an Eagle."""
-        return Nest.objects.filter(eagle=eagle).select_related("eagle")
+        # eagle__mentor_kyc joined so NestListSerializer.mentor_profile is N+1-free.
+        return Nest.objects.filter(eagle=eagle).select_related("eagle", "eagle__mentor_kyc")
 
     @staticmethod
     def get_public_nests():
         """Return active public Nests for browsing."""
         return (
             Nest.objects.filter(is_active=True, privacy=Nest.Privacy.PUBLIC)
-            .select_related("eagle")
+            # eagle__mentor_kyc joined for the mentor_profile embed (Phase 28-01).
+            .select_related("eagle", "eagle__mentor_kyc")
         )
 
     @staticmethod
