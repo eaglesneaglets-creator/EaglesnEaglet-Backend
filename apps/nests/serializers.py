@@ -139,20 +139,33 @@ class NestDetailSerializer(serializers.ModelSerializer):
     member_count = serializers.IntegerField(source="annotated_member_count", read_only=True)
     is_full = serializers.BooleanField(source="annotated_is_full", read_only=True)
     current_program = serializers.SerializerMethodField()
+    mentor_profile = serializers.SerializerMethodField()
 
     class Meta:
         model = Nest
         fields = [
             "id", "name", "slug", "description", "industry_focus",
-            "banner_image", "eagle_details", "privacy", "allow_referrals",
-            "meeting_link", "max_members", "member_count", "is_full",
-            "is_active", "current_program",
+            "banner_image", "eagle_details", "mentor_profile", "privacy",
+            "allow_referrals", "meeting_link", "max_members", "member_count",
+            "is_full", "is_active", "current_program",
             "created_at", "updated_at",
         ]
         read_only_fields = [
-            "id", "slug", "eagle_details", "current_program",
+            "id", "slug", "eagle_details", "mentor_profile", "current_program",
             "created_at", "updated_at",
         ]
+
+    def get_mentor_profile(self, obj):
+        """Embed the eagle's MentorKYC as a person-first profile, or None.
+
+        Same source/shape as NestListSerializer (Phase 28-01) so the mentor
+        detail page renders the mentor, not the nest. Null-safe: a missing
+        KYC row must not break the detail response.
+        """
+        kyc = getattr(obj.eagle, "mentor_kyc", None)
+        if kyc is None:
+            return None
+        return MentorProfileSerializer(kyc).data
 
     def get_current_program(self, obj):
         # Pick first active program for this nest (single-active-per-nest invariant).

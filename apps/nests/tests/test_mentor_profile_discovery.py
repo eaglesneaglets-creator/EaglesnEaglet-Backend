@@ -130,3 +130,50 @@ def test_no_n_plus_one(client_as_mentee, django_assert_max_num_queries, db):
         resp = client_as_mentee.get("/api/v1/nests/")
     assert resp.status_code == 200
     assert len(resp.json()["data"]) >= 6
+
+
+# ---------------------------------------------------------------------------
+# Detail page (Phase 28-03) — NestDetailSerializer must embed the same
+# person-first mentor_profile so the mentor public profile page renders the
+# mentor, not the nest. Same source (MentorKYC), same null-safety.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_detail_includes_mentor_profile(client_as_mentee, public_nest):
+    resp = client_as_mentee.get(f"/api/v1/nests/{public_nest.id}/")
+    assert resp.status_code == 200
+    data = resp.json()["data"]  # detail envelope: {success, data: {...}}
+    mp = data["mentor_profile"]
+    assert mp is not None
+    assert mp["current_occupation"] == "Financial Analyst"
+    assert mp["area_of_expertise"] == "Finance"
+    assert mp["profile_description"].startswith("15 years")
+    assert mp["years_of_service"] == 8
+    assert mp["location"] == "Accra, Ghana"
+    assert mp["display_picture"] == "https://cdn.example.com/rich.jpg"
+    assert "Career" in mp["mentorship_types"]
+    assert mp["kyc_verified"] is True
+
+
+@pytest.mark.django_db
+def test_detail_missing_kyc_is_graceful(client_as_mentee, db):
+    eagle = _make_eagle("detail_no_kyc@test.com")  # no MentorKYC row
+    nest = Nest.objects.create(
+        name="Bare Detail Nest", eagle=eagle,
+        privacy=Nest.Privacy.PUBLIC, is_active=True,
+    )
+    resp = client_as_mentee.get(f"/api/v1/nests/{nest.id}/")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["mentor_profile"] is None
+
+
+@pytest.mark.django_db
+def test_detail_no_extra_query_for_mentor_profile(
+    client_as_mentee, public_nest, django_assert_max_num_queries,
+):
+    """The retrieve path select_related's eagle__mentor_kyc, so mentor_profile
+    adds no lazy query. Cap holds the join in place against regressions."""
+    with django_assert_max_num_queries(8):
+        resp = client_as_mentee.get(f"/api/v1/nests/{public_nest.id}/")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["mentor_profile"]["kyc_verified"] is True

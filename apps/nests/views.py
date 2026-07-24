@@ -104,7 +104,7 @@ class NestViewSet(ViewSet):
         from .models import Nest
         try:
             nest = _annotate_nest_counts(
-                Nest.objects.select_related("eagle")
+                Nest.objects.select_related("eagle", "eagle__mentor_kyc")
                 .prefetch_related("programs__objectives__rules")
             ).get(pk=pk)
         except Nest.DoesNotExist:
