@@ -55,6 +55,30 @@ class UserMinimalSerializer(serializers.ModelSerializer):
 
 
 # ---------------------------------------------------------------------------
+# Mentor profile (Phase 28-01) — embedded in nest discovery so the mentee
+# browse card can render person-first mentor data sourced from MentorKYC.
+# ---------------------------------------------------------------------------
+
+class MentorProfileSerializer(serializers.Serializer):
+    """Read-only view of a mentor's KYC-sourced public profile."""
+
+    display_picture = serializers.CharField(read_only=True, allow_blank=True, default="")
+    current_occupation = serializers.CharField(read_only=True, allow_blank=True, default="")
+    area_of_expertise = serializers.CharField(read_only=True, allow_blank=True, default="")
+    profile_description = serializers.CharField(read_only=True, allow_blank=True, default="")
+    years_of_service = serializers.IntegerField(read_only=True, default=0)
+    location = serializers.CharField(read_only=True, allow_blank=True, default="")
+    mentorship_types = serializers.SerializerMethodField()
+    kyc_verified = serializers.SerializerMethodField()
+
+    def get_mentorship_types(self, obj):
+        return getattr(obj, "mentorship_types", None) or []
+
+    def get_kyc_verified(self, obj):
+        return getattr(obj, "status", None) == "approved"
+
+
+# ---------------------------------------------------------------------------
 # Nest
 # ---------------------------------------------------------------------------
 
@@ -63,15 +87,27 @@ class NestListSerializer(serializers.ModelSerializer):
 
     eagle_name = serializers.CharField(source="eagle.full_name", read_only=True)
     member_count = serializers.IntegerField(source="annotated_member_count", read_only=True)
+    mentor_profile = serializers.SerializerMethodField()
 
     class Meta:
         model = Nest
         fields = [
             "id", "name", "slug", "description", "industry_focus",
             "banner_image", "eagle", "eagle_name", "privacy",
-            "member_count", "is_active", "created_at",
+            "member_count", "is_active", "created_at", "mentor_profile",
         ]
         read_only_fields = ["id", "slug", "eagle", "created_at"]
+
+    def get_mentor_profile(self, obj):
+        """Embed the eagle's MentorKYC as a person-first profile, or None.
+
+        Null-safe: public nests are auto-created on KYC approval, but a missing
+        KYC row must not break the discovery list.
+        """
+        kyc = getattr(obj.eagle, "mentor_kyc", None)
+        if kyc is None:
+            return None
+        return MentorProfileSerializer(kyc).data
 
 
 class DiscoveryObjectiveSerializer(serializers.Serializer):
