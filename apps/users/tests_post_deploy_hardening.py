@@ -66,12 +66,28 @@ def test_suspended_user_is_rejected_on_authenticated_request(active_user):
     assert c.get(ME_URL).status_code == 200  # baseline: works while active
 
     # Suspend, then the very next request must be rejected — no waiting for
-    # the access token to expire. Enforced at the auth layer → 401.
+    # the access token to expire. Enforced at the auth layer.
     active_user.status = User.Status.SUSPENDED
     active_user.save(update_fields=["status"])
 
     resp = c.get(ME_URL)
-    assert resp.status_code == 401
+    assert resp.status_code == 403
+
+
+def test_suspended_response_carries_machine_readable_code(active_user):
+    """403 + error_code 'account_suspended' so the client can route to the
+    /suspended page instead of treating it as an expired session (401), which
+    would trigger a pointless refresh loop."""
+    c = _auth_client(active_user)
+    active_user.status = User.Status.SUSPENDED
+    active_user.save(update_fields=["status"])
+
+    resp = c.get(ME_URL)
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body["success"] is False
+    assert body["error"]["error_code"] == "account_suspended"
+    assert "suspended" in body["error"]["message"].lower()
 
 
 def test_isnotsuspended_permission_allows_anonymous():
