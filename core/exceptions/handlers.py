@@ -95,6 +95,16 @@ def custom_exception_handler(exc, context):
             },
         }
 
+        # Machine-readable error slug (DRF's exception `code`, e.g.
+        # 'account_suspended'). `code` above is the HTTP status and `type` is a
+        # class name — neither is a stable contract for clients to branch on.
+        error_code = getattr(exc, 'default_code', None)
+        detail = getattr(exc, 'detail', None)
+        if hasattr(detail, 'code'):  # ErrorDetail carries the per-raise code
+            error_code = detail.code or error_code
+        if error_code:
+            error_response['error']['error_code'] = error_code
+
         # Add request ID if available
         request = context.get('request')
         if request and hasattr(request, 'request_id'):

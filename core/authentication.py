@@ -8,8 +8,23 @@ API clients (mobile apps, Postman, curl) continue to work unchanged.
 Used as the primary DEFAULT_AUTHENTICATION_CLASS in settings/base.py.
 """
 
+from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.exceptions import AuthenticationFailed
+
+
+class AccountSuspended(PermissionDenied):
+    """403 raised when a suspended account presents a still-valid token.
+
+    Deliberately a PermissionDenied (403), NOT AuthenticationFailed (401):
+    the frontend treats 401 as "token expired" and auto-refreshes, which for a
+    suspended user succeeds (the refresh token is still valid) and then fails
+    again — an infinite refresh loop that dumps the user at the login screen
+    with no explanation. A 403 with a stable ``code`` lets the client route
+    straight to the /suspended page instead.
+    """
+
+    default_detail = "Your account has been suspended."
+    default_code = "account_suspended"
 
 
 class CookieJWTAuthentication(JWTAuthentication):
@@ -36,7 +51,7 @@ class CookieJWTAuthentication(JWTAuthentication):
         """
         user = super().get_user(validated_token)
         if getattr(user, "status", None) == "suspended":
-            raise AuthenticationFailed("Account is suspended.", code="user_suspended")
+            raise AccountSuspended()
         return user
 
     def authenticate(self, request):
@@ -47,9 +62,9 @@ class CookieJWTAuthentication(JWTAuthentication):
             try:
                 validated_token = self.get_validated_token(raw_token)
                 return self.get_user(validated_token), validated_token
-            except AuthenticationFailed:
-                # Valid token but the user is rejected (e.g. suspended) — a
-                # definitive denial, NOT a reason to fall through to the header.
+            except AccountSuspended:
+                # Valid token, but the account is suspended — a definitive
+                # denial, NOT a reason to fall through to the header.
                 raise
             except Exception:
                 # Invalid or expired cookie — fall through to header
