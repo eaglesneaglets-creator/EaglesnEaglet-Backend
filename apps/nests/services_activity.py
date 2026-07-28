@@ -6,6 +6,7 @@ is easy to find and doesn't bloat the core service.
 """
 
 import logging
+import re
 
 from django.db.models import Count, F, Q
 from rest_framework.exceptions import NotFound, ValidationError
@@ -14,6 +15,15 @@ from .models import Nest, NestMembership
 from .models_activity import NestActivity
 
 logger = logging.getLogger(__name__)
+
+# Bounded URL matcher for surfacing links shared in post text. Deliberately
+# simple + length-capped (no backtracking blowup); we only surface the raw URL,
+# never fetch it — OpenGraph/thumbnail unfurling is a separate future phase.
+_URL_RE = re.compile(r"https?://[^\s<>\"]{1,300}")
+
+
+def _display_name(user):
+    return getattr(user, "full_name", None) or (str(user) if user else "Unknown")
 
 
 def record_admin_activity(nest, actor, action_type, target="", **metadata):
@@ -180,3 +190,55 @@ class NestAdminService:
         if not Nest.all_objects.filter(pk=nest_id).exists():
             raise NotFound("Nest not found.")
         return NestActivity.objects.filter(nest_id=nest_id).select_related("actor")
+
+    @staticmethod
+    def get_shared_content(nest, limit=50):
+        """Aggregate everything shared in a nest into one unified list.
+
+        Three sources, newest-first, because "shared content" as a member sees
+        it is not just the formal resource library:
+          1. NestResource  — files/links uploaded to the resource library.
+          2. NestPost.attachment_url — files/images attached to feed posts.
+          3. URLs found in NestPost.content — links shared inline in posts.
+
+        Returns plain dicts with a common shape so the serializer stays trivial:
+        {kind, title, url, content_type, shared_by, created_at}. `kind` is one
+        of 'resource' | 'attachment' | 'link'.
+        """
+        items = []
+
+        for r in nest.resources.select_related("uploaded_by"):
+            items.append({
+                "kind": "resource",
+                "title": r.title,
+                "url": r.file_url,
+                "content_type": r.file_type,
+                "shared_by": _display_name(r.uploaded_by),
+                "created_at": r.created_at,
+            })
+
+        for p in nest.posts.select_related("author"):
+            if p.attachment_url:
+                items.append({
+                    "kind": "attachment",
+                    "title": (p.content or "").strip()[:80] or "Attachment",
+                    "url": p.attachment_url,
+                    "content_type": p.attachment_type or "file",
+                    "shared_by": _display_name(p.author),
+                    "created_at": p.created_at,
+                })
+            # Inline links in the post body (excluding the attachment URL itself).
+            for match in _URL_RE.findall(p.content or ""):
+                if match == p.attachment_url:
+                    continue
+                items.append({
+                    "kind": "link",
+                    "title": match,
+                    "url": match,
+                    "content_type": "link",
+                    "shared_by": _display_name(p.author),
+                    "created_at": p.created_at,
+                })
+
+        items.sort(key=lambda i: i["created_at"], reverse=True)
+        return items[:limit]
