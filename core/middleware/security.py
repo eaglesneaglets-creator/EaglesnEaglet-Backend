@@ -147,49 +147,7 @@ class RateLimitByIPMiddleware:
 
         return self.get_response(request)
 
-
-class SQLInjectionProtectionMiddleware:
-    """
-    Additional layer of SQL injection protection.
-    Logs and blocks suspicious query patterns.
-    """
-
-    SUSPICIOUS_PATTERNS = [
-        r"(\%27)|(\')|(\-\-)|(\%23)|(#)",
-        r"((\%3D)|(=))[^\n]*((\%27)|(\')|(\-\-)|(\%3B)|(;))",
-        r"\w*((\%27)|(\'))((\%6F)|o|(\%4F))((\%72)|r|(\%52))",
-        r"((\%27)|(\'))union",
-        r"exec(\s|\+)+(s|x)p\w+",
-        r"UNION(\s+)SELECT",
-        r"INSERT(\s+)INTO",
-        r"DELETE(\s+)FROM",
-        r"DROP(\s+)TABLE",
-        r"UPDATE(\s+)\w+(\s+)SET",
-    ]
-
-    def __init__(self, get_response):
-        self.get_response = get_response
-        self.compiled_patterns = [
-            re.compile(p, re.IGNORECASE) for p in self.SUSPICIOUS_PATTERNS
-        ]
-
-    def __call__(self, request):
-        # Check query parameters
-        query_string = request.META.get('QUERY_STRING', '')
-
-        for pattern in self.compiled_patterns:
-            if pattern.search(query_string):
-                logger.warning(
-                    'Potential SQL injection attempt detected',
-                    extra={
-                        'ip': get_client_ip(request),
-                        'path': request.path,
-                        'query': query_string[:500],
-                    }
-                )
-                return HttpResponseForbidden(
-                    '{"error": {"code": 403, "message": "Invalid request"}}',
-                    content_type='application/json'
-                )
-
-        return self.get_response(request)
+# SQLInjectionProtectionMiddleware removed in Phase 26-01: the ORM parameterises
+# all queries (injection is prevented at the driver layer), while the regex
+# scanner false-positive-blocked legitimate input — any apostrophe (O'Brien),
+# or prose containing SQL keywords. Security theatre that broke real users.

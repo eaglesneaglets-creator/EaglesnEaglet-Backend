@@ -9,6 +9,7 @@ from .roles import (
     IsNestOwnerFromURL,
     IsPlatformAdmin,
     IsSuperAdmin,
+    IsNotSuspended,
 )
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     'IsNestOwnerFromURL',
     'IsPlatformAdmin',
     'IsSuperAdmin',
+    'IsNotSuspended',
 ]
