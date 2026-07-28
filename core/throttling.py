@@ -57,6 +57,24 @@ class RegisterRateThrottle(SimpleRateThrottle):
         }
 
 
+class RefreshRateThrottle(SimpleRateThrottle):
+    """
+    Throttling for the JWT token-refresh endpoint (Phase 26-01).
+
+    The refresh endpoint is unauthenticated (it reads the httpOnly refresh
+    cookie), so a stolen refresh token could otherwise spin fresh access tokens
+    unbounded. Throttle by IP to cap automated token-minting abuse.
+    """
+
+    scope = 'refresh'
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': self.get_ident(request)
+        }
+
+
 class PasswordResetThrottle(SimpleRateThrottle):
     """
     Throttling for password reset requests.

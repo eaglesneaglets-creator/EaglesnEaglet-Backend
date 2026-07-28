@@ -184,3 +184,27 @@ class IsSuperAdmin(BasePermission):
     def has_permission(self, request, view):
         u = request.user
         return bool(u and u.is_authenticated and u.is_superuser)
+
+
+class IsNotSuspended(BasePermission):
+    """Deny API access to suspended accounts, live per-request (Phase 26-01).
+
+    Wired into DEFAULT_PERMISSION_CLASSES so it applies platform-wide. Without
+    it, a suspended user keeps full API access until their JWT access token
+    expires (and can refresh it), because the JWT auth backend never re-reads
+    ``status``. This closes that window: the suspended user's very next request
+    is rejected.
+
+    Anonymous users PASS — this permission must not break AllowAny endpoints
+    (login, register, refresh, public pages). Only an authenticated user whose
+    ``status`` is ``suspended`` is blocked. Compared to the literal 'suspended'
+    to avoid importing the User model here.
+    """
+
+    message = "Your account has been suspended."
+
+    def has_permission(self, request, view):
+        u = request.user
+        if not (u and u.is_authenticated):
+            return True
+        return getattr(u, "status", None) != "suspended"

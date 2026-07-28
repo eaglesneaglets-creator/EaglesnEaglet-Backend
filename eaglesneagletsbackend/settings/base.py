@@ -59,7 +59,6 @@ MIDDLEWARE = [
     'core.middleware.security.RateLimitByIPMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'core.middleware.security.SQLInjectionProtectionMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -149,6 +148,9 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
+        # Phase 26-01: suspended accounts lose API access live (anonymous passes,
+        # so AllowAny endpoints are unaffected).
+        'core.permissions.IsNotSuspended',
     ],
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
@@ -167,6 +169,7 @@ REST_FRAMEWORK = {
         'burst': '60/minute',
         'login': '5/minute',
         'register': '3/minute',
+        'refresh': '20/minute',  # Phase 26-01: cap token-refresh abuse
     },
     'EXCEPTION_HANDLER': 'core.exceptions.handlers.custom_exception_handler',
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
@@ -228,6 +231,20 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 DEFAULT_FROM_EMAIL = 'noreply@eaglesneaglets.com'
 
 
+# Cache — Phase 26-01: a working default lives here so any environment or
+# management command that loads base settings without a per-env override still
+# has caching. local.py / production.py override 'default' with Redis.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+    }
+}
+
+# Retention window for raw EngagementLog rows before the archival task purges
+# them (Phase 26-01). Dashboards read aggregates, not raw rows.
+ENGAGEMENT_LOG_RETENTION_DAYS = 90
+
+
 # Celery Configuration (for background tasks)
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_TASK_ALWAYS_EAGER = False
@@ -247,6 +264,11 @@ CELERY_BEAT_SCHEDULE = {
     'backup-database': {
         'task': 'users.backup_database',
         'schedule': crontab(hour=2, minute=0),
+    },
+    # Phase 26-01: purge raw EngagementLog rows past retention, weekly Sun 03:00 UTC
+    'archive-engagement-logs': {
+        'task': 'analytics.archive_engagement_logs',
+        'schedule': crontab(hour=3, minute=0, day_of_week=0),
     },
 }
 

@@ -15,7 +15,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 
-from core.throttling import BurstRateThrottle, LoginRateThrottle, RegisterRateThrottle, PasswordResetThrottle
+from core.throttling import BurstRateThrottle, LoginRateThrottle, RegisterRateThrottle, PasswordResetThrottle, RefreshRateThrottle
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +271,7 @@ class CustomTokenRefreshView(TokenRefreshView):
     # valid refresh_token (httpOnly cookie) — no access token is present.
     permission_classes = [AllowAny]
     authentication_classes = []  # Skip JWT auth — we read the refresh cookie ourselves
+    throttle_classes = [RefreshRateThrottle]  # Phase 26-01: cap refresh-token abuse
 
     def post(self, request, *args, **kwargs):
         # Read refresh token from cookie first, fall back to request body.
