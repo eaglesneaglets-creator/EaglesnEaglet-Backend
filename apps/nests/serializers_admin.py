@@ -9,7 +9,7 @@ from rest_framework import serializers
 
 from apps.users.models import User
 
-from .models import Nest, NestMembership, NestResource
+from .models import Nest, NestMembership
 from .models_activity import NestActivity
 from .serializers import UserMinimalSerializer
 
@@ -61,15 +61,20 @@ class NestActivitySerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class AdminNestResourceSerializer(serializers.ModelSerializer):
-    """Shared content row (view-only) for the admin detail page."""
+class AdminSharedContentSerializer(serializers.Serializer):
+    """Unified shared-content row (view-only) for the admin detail page.
 
-    uploaded_by = UserMinimalSerializer(read_only=True)
+    Backs the aggregated {kind, title, url, content_type, shared_by, created_at}
+    dicts from NestAdminService.get_shared_content — merging resource-library
+    uploads, post attachments, and links shared inline in posts.
+    """
 
-    class Meta:
-        model = NestResource
-        fields = ["id", "title", "file_url", "uploaded_by", "created_at"]
-        read_only_fields = fields
+    kind = serializers.CharField()          # resource | attachment | link
+    title = serializers.CharField()
+    url = serializers.CharField()
+    content_type = serializers.CharField()
+    shared_by = serializers.CharField()
+    created_at = serializers.DateTimeField()
 
 
 class AdminMembershipSerializer(serializers.ModelSerializer):
@@ -103,8 +108,11 @@ class AdminNestDetailSerializer(AdminNestListSerializer):
         return AdminMembershipSerializer(qs, many=True).data
 
     def get_shared_content(self, obj):
-        qs = obj.resources.select_related("uploaded_by")[:50]
-        return AdminNestResourceSerializer(qs, many=True).data
+        # Local import avoids a circular import (services_activity imports models,
+        # which the serializers module is part of the same app graph as).
+        from .services_activity import NestAdminService
+        items = NestAdminService.get_shared_content(obj)
+        return AdminSharedContentSerializer(items, many=True).data
 
     def get_recent_activity(self, obj):
         qs = obj.activities.select_related("actor")[:10]

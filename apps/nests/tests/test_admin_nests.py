@@ -224,3 +224,100 @@ def test_cannot_remove_nest_owner(super_client, nest):
     owner_m = NestMembership.objects.create(nest=nest, user=nest.eagle, status="active")
     resp = super_client.delete(f"/api/v1/admin/nests/{nest.id}/members/{owner_m.id}/")
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Shared Content aggregation (bug fix): resource library + post attachments +
+# inline links — not just NestResource.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_shared_content_merges_resources_attachments_and_links(super_client, nest):
+    # 1) formal resource-library upload
+    NestResource.objects.create(
+        nest=nest, title="Ethics.pdf", file_url="https://cdn/ethics.pdf",
+        uploaded_by=nest.eagle,
+    )
+    # 2) a post carrying a file attachment
+    NestPost.objects.create(
+        nest=nest, author=nest.eagle, content="Morning devotion notes",
+        attachment_url="https://cdn/notes.png", attachment_type="image",
+    )
+    # 3) a post with an inline link in the body
+    NestPost.objects.create(
+        nest=nest, author=nest.eagle,
+        content="Great read here https://example.com/article on stewardship",
+    )
+
+    resp = super_client.get(f"/api/v1/admin/nests/{nest.id}/")
+    assert resp.status_code == 200
+    content = resp.json()["data"]["shared_content"]
+    kinds = {c["kind"] for c in content}
+    assert kinds == {"resource", "attachment", "link"}
+
+    by_url = {c["url"]: c for c in content}
+    assert by_url["https://cdn/ethics.pdf"]["kind"] == "resource"
+    assert by_url["https://cdn/notes.png"]["kind"] == "attachment"
+    assert by_url["https://example.com/article"]["kind"] == "link"
+    # unified shape present on every row
+    for c in content:
+        assert set(c) >= {"kind", "title", "url", "content_type", "shared_by", "created_at"}
+
+
+@pytest.mark.django_db
+def test_shared_content_empty_when_nothing_shared(super_client, nest):
+    resp = super_client.get(f"/api/v1/admin/nests/{nest.id}/")
+    assert resp.json()["data"]["shared_content"] == []
+
+
+# ---------------------------------------------------------------------------
+# Backfill command (bug fix): reconstruct history + idempotent re-run.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_backfill_reconstructs_activity_and_is_idempotent(nest, eaglet):
+    from django.core.management import call_command
+
+    NestMembership.objects.create(nest=nest, user=eaglet, status="active")
+    NestPost.objects.create(nest=nest, author=nest.eagle, content="Welcome all")
+    NestResource.objects.create(
+        nest=nest, title="Slides.pdf", file_url="https://cdn/s.pdf", uploaded_by=nest.eagle,
+    )
+    # Simulate PRE-27-01 history: wipe the signal-created audit rows so this
+    # nest looks like one whose activity was never recorded.
+    NestActivity.objects.filter(nest=nest).delete()
+    assert NestActivity.objects.filter(nest=nest).count() == 0
+
+    # Backfill reconstructs all three from the surviving source rows.
+    call_command("backfill_nest_activity", "--nest", str(nest.id))
+    after_first = NestActivity.objects.filter(nest=nest).count()
+    assert after_first == 3
+    assert NestActivity.objects.filter(nest=nest, action_type="member_joined").exists()
+    assert NestActivity.objects.filter(nest=nest, action_type="post_created").exists()
+    assert NestActivity.objects.filter(nest=nest, action_type="content_shared").exists()
+
+    # Re-run: source_ref dedup → no duplicates.
+    call_command("backfill_nest_activity", "--nest", str(nest.id))
+    assert NestActivity.objects.filter(nest=nest).count() == 3
+
+
+@pytest.mark.django_db
+def test_backfill_does_not_double_log_signal_recorded_rows(nest, eaglet):
+    """When signals ALREADY recorded a post/resource (post-27-01 data), backfill
+    must not add a second copy — the time-window dedup catches signal rows that
+    lack a source_ref."""
+    from django.core.management import call_command
+
+    NestPost.objects.create(nest=nest, author=nest.eagle, content="Recent post")
+    NestResource.objects.create(
+        nest=nest, title="Recent.pdf", file_url="https://cdn/r.pdf", uploaded_by=nest.eagle,
+    )
+    # Signals fired → 1 post_created + 1 content_shared already exist.
+    assert NestActivity.objects.filter(nest=nest, action_type="post_created").count() == 1
+    assert NestActivity.objects.filter(nest=nest, action_type="content_shared").count() == 1
+
+    call_command("backfill_nest_activity", "--nest", str(nest.id))
+
+    # Still exactly one of each — no double-log.
+    assert NestActivity.objects.filter(nest=nest, action_type="post_created").count() == 1
+    assert NestActivity.objects.filter(nest=nest, action_type="content_shared").count() == 1
