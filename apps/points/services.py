@@ -15,7 +15,7 @@ from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.users.models import User
-from .models import PointConfiguration, PointTransaction, Badge, UserBadge
+from .models import PointConfiguration, PointsPolicy, PointTransaction, Badge, UserBadge
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +155,35 @@ class PointService:
                         "You can only award points to Eaglets in your Nests."
                     )
 
+        # --- Governance: superadmin-set ceiling + daily budget (Phase 31-01) ---
+        # Enforced HERE rather than in the serializer: this service is the single
+        # chokepoint every caller passes through, so the limit cannot be bypassed
+        # by a management command, signal, or future internal caller.
+        # Admins are exempt — they set the policy. Reuses the SAME predicate as the
+        # nest bypass above (is_staff or is_superuser) so stacked admins behave
+        # consistently across both checks.
+        is_admin_actor = eagle.is_staff or eagle.is_superuser
+        policy = PointsPolicy.load()
+
+        if policy.is_enforced and not is_admin_actor:
+            if points > policy.max_manual_award:
+                raise ValidationError({
+                    "points": (
+                        f"Maximum {policy.max_manual_award} points per award. "
+                        f"You tried to award {points}."
+                    )
+                })
+
+            used_today = PointService._manual_points_awarded_today(eagle)
+            remaining = policy.daily_points_per_mentor - used_today
+            if points > remaining:
+                raise ValidationError({
+                    "points": (
+                        f"Daily limit reached. You have {max(remaining, 0)} of "
+                        f"{policy.daily_points_per_mentor} points left to award today."
+                    )
+                })
+
         txn = PointTransaction.objects.create(
             user=eaglet,
             points=points,
@@ -172,6 +201,52 @@ class PointService:
 
         PointService.check_and_award_badges(eaglet)
         return txn
+
+    @staticmethod
+    def _manual_points_awarded_today(eagle) -> int:
+        """Total manual points this user has awarded today (UTC).
+
+        Summed straight from the append-only ledger rather than a counter column,
+        so the number can never drift from reality. Backed by the
+        (awarded_by, -created_at) index added in migration 0009.
+        UTC matches the Celery beat schedules used elsewhere.
+        """
+        today = timezone.now().date()
+        total = PointTransaction.objects.filter(
+            awarded_by=eagle,
+            source=PointTransaction.Source.MANUAL,
+            created_at__date=today,
+        ).aggregate(total=Sum("points"))["total"]
+        return total or 0
+
+    @staticmethod
+    def get_award_budget(eagle) -> dict:
+        """Remaining manual-award allowance for this user.
+
+        Shared by the enforcement path and `GET /points/award-budget/` so the
+        figure shown in the UI is computed the same way as the one enforced.
+        Admins are unlimited (they set the policy).
+        """
+        policy = PointsPolicy.load()
+        is_admin_actor = eagle.is_staff or eagle.is_superuser
+
+        if not policy.is_enforced or is_admin_actor:
+            return {
+                "max_per_award": None,
+                "daily_limit": None,
+                "used_today": PointService._manual_points_awarded_today(eagle),
+                "remaining": None,
+                "is_enforced": False,
+            }
+
+        used_today = PointService._manual_points_awarded_today(eagle)
+        return {
+            "max_per_award": policy.max_manual_award,
+            "daily_limit": policy.daily_points_per_mentor,
+            "used_today": used_today,
+            "remaining": max(policy.daily_points_per_mentor - used_today, 0),
+            "is_enforced": True,
+        }
 
     # ------------------------------------------------------------------
     # Queries

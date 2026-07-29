@@ -16,6 +16,8 @@ from core.permissions import IsEagleOrAdmin, IsSuperAdmin
 
 from .serializers import (
     PointConfigurationSerializer,
+    PointsPolicySerializer,
+    AwardBudgetSerializer,
     PointTransactionSerializer,
     ManualPointAwardSerializer,
     LeaderboardEntrySerializer,
@@ -23,7 +25,7 @@ from .serializers import (
     UserBadgeSerializer,
 )
 from .services import PointService
-from .models import PointConfiguration, Badge
+from .models import PointConfiguration, PointsPolicy, Badge
 
 
 class PointsViewSet(ViewSet):
@@ -103,6 +105,23 @@ class PointsViewSet(ViewSet):
         return Response(
             {"success": True, "data": PointTransactionSerializer(txn).data},
             status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="award-budget",
+        permission_classes=[IsAuthenticated, IsEagleOrAdmin],
+    )
+    def award_budget(self, request):
+        """Remaining manual-award allowance for the caller (Phase 31-01).
+
+        Lets the Award modal show the budget BEFORE submitting, rather than
+        surprising the mentor with a rejection.
+        """
+        budget = PointService.get_award_budget(request.user)
+        return Response(
+            {"success": True, "data": AwardBudgetSerializer(budget).data}
         )
 
 
@@ -197,6 +216,33 @@ class PointConfigViewSet(ViewSet):
 
         serializer = PointConfigurationSerializer(
             config, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"success": True, "data": serializer.data})
+
+
+class PointsPolicyViewSet(ViewSet):
+    """Manual-award governance policy — Admin Settings surface (Phase 31-01).
+
+    Superadmin-only, mirroring PointConfigViewSet: scoped (dual-role) admins must
+    not be able to raise the ceiling that governs them.
+
+    GET   /points/policy/   → current policy
+    PATCH /points/policy/   → update ceiling / daily budget / enforcement flag
+    """
+
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+
+    def list(self, request):
+        """Return the singleton policy."""
+        serializer = PointsPolicySerializer(PointsPolicy.load())
+        return Response({"success": True, "data": serializer.data})
+
+    def partial_update(self, request, pk=None):
+        """Update the singleton policy (pk ignored — there is only one row)."""
+        serializer = PointsPolicySerializer(
+            PointsPolicy.load(), data=request.data, partial=True
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
