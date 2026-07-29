@@ -8,7 +8,7 @@ badges, and configuration.
 from rest_framework import serializers
 
 
-from .models import PointConfiguration, PointTransaction, Badge, UserBadge
+from .models import PointConfiguration, PointsPolicy, PointTransaction, Badge, UserBadge
 
 
 class PointConfigurationSerializer(serializers.ModelSerializer):
@@ -44,12 +44,42 @@ class PointTransactionSerializer(serializers.ModelSerializer):
 
 
 class ManualPointAwardSerializer(serializers.Serializer):
-    """Write serializer for manual point awards."""
+    """Write serializer for manual point awards.
+
+    NOTE: `max_value` here is only a loose sanity bound against absurd input. The
+    REAL ceiling is `PointsPolicy.max_manual_award`, enforced in
+    `PointService.award_manual_points()` — the chokepoint every caller passes
+    through. Do not re-add a hardcoded business limit here: serializer validation
+    is bypassable by any non-API caller (management commands, signals, internal
+    services), which is exactly the hole this replaced.
+    """
 
     eaglet_id = serializers.UUIDField()
-    points = serializers.IntegerField(min_value=1, max_value=1000)
+    points = serializers.IntegerField(min_value=1, max_value=100000)
     description = serializers.CharField(max_length=250, min_length=5)
     nest_id = serializers.UUIDField(required=False)
+
+
+class PointsPolicySerializer(serializers.ModelSerializer):
+    """Superadmin read/write of the manual-award governance policy."""
+
+    class Meta:
+        model = PointsPolicy
+        fields = [
+            "id", "max_manual_award", "daily_points_per_mentor",
+            "is_enforced", "updated_at",
+        ]
+        read_only_fields = ["id", "updated_at"]
+
+
+class AwardBudgetSerializer(serializers.Serializer):
+    """Remaining manual-award allowance for the requesting user."""
+
+    max_per_award = serializers.IntegerField(allow_null=True)
+    daily_limit = serializers.IntegerField(allow_null=True)
+    used_today = serializers.IntegerField()
+    remaining = serializers.IntegerField(allow_null=True)
+    is_enforced = serializers.BooleanField()
 
 
 class LeaderboardEntrySerializer(serializers.Serializer):

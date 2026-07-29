@@ -37,7 +37,24 @@ class CookieJWTAuthentication(JWTAuthentication):
       2. Authorization: Bearer header (API clients / mobile apps)
     """
 
-    def get_user(self, validated_token):
+    #: Paths a suspended account may still reach. Logout's entire job is to
+    #: DESTROY credentials, so gating it on account health traps the user: the
+    #: auth cookies are httpOnly, meaning only a server response can delete them,
+    #: and the server refuses to answer. The result is a browser that keeps
+    #: sending valid suspended-user cookies forever — which also breaks a
+    #: *different* person signing in on that browser. Suspended users keep
+    #: exactly one capability: leaving.
+    SUSPENDED_ALLOWED_PATHS = ("/api/v1/auth/logout/",)
+
+    #: Set during authenticate() so the header path (where SimpleJWT calls
+    #: get_user() without a request) can still check the exemption.
+    _current_request = None
+
+    def _suspension_exempt(self, request) -> bool:
+        path = getattr(request, "path", "") or ""
+        return path in self.SUSPENDED_ALLOWED_PATHS
+
+    def get_user(self, validated_token, request=None):
         """Resolve the token's user, rejecting suspended accounts (Phase 26-01).
 
         Enforcing suspension HERE (not only via the IsNotSuspended permission)
@@ -48,9 +65,17 @@ class CookieJWTAuthentication(JWTAuthentication):
         user's still-valid access token stops working immediately — no waiting
         for the 15-min token to expire. Mirrors how SimpleJWT rejects inactive
         users via USER_AUTHENTICATION_RULE.
+
+        Exception: logout (see SUSPENDED_ALLOWED_PATHS).
         """
         user = super().get_user(validated_token)
         if getattr(user, "status", None) == "suspended":
+            # `request` is passed explicitly on the cookie path; on the header
+            # path SimpleJWT calls this with the token only, so fall back to the
+            # request stashed in authenticate().
+            effective_request = request or getattr(self, "_current_request", None)
+            if effective_request is not None and self._suspension_exempt(effective_request):
+                return user
             raise AccountSuspended()
         return user
 
@@ -61,7 +86,7 @@ class CookieJWTAuthentication(JWTAuthentication):
         if raw_token is not None:
             try:
                 validated_token = self.get_validated_token(raw_token)
-                return self.get_user(validated_token), validated_token
+                return self.get_user(validated_token, request=request), validated_token
             except AccountSuspended:
                 # Valid token, but the account is suspended — a definitive
                 # denial, NOT a reason to fall through to the header.
@@ -70,5 +95,11 @@ class CookieJWTAuthentication(JWTAuthentication):
                 # Invalid or expired cookie — fall through to header
                 pass
 
-        # 2. Fall back to Authorization: Bearer <token> header
-        return super().authenticate(request)
+        # 2. Fall back to Authorization: Bearer <token> header.
+        # SimpleJWT's authenticate() calls self.get_user(validated_token) with no
+        # request, so stash it for the exemption check above.
+        self._current_request = request
+        try:
+            return super().authenticate(request)
+        finally:
+            self._current_request = None

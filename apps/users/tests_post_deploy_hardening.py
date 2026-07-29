@@ -90,6 +90,35 @@ def test_suspended_response_carries_machine_readable_code(active_user):
     assert "suspended" in body["error"]["message"].lower()
 
 
+def test_suspended_user_can_still_log_out(active_user):
+    """Logout MUST work for a suspended account (Phase 26-01b follow-up).
+
+    Auth tokens live in httpOnly cookies, which only a server response can
+    delete. If logout is blocked by the suspension check, the browser keeps
+    sending valid suspended-user cookies forever — the /suspended page reappears
+    on every navigation, and a DIFFERENT person signing in on that browser gets
+    hijacked by the stale session.
+    """
+    c = _auth_client(active_user)
+    active_user.status = User.Status.SUSPENDED
+    active_user.save(update_fields=["status"])
+
+    # Everything else is blocked...
+    assert c.get(ME_URL).status_code == 403
+    # ...but they can always leave.
+    assert c.post("/api/v1/auth/logout/").status_code == 200
+
+
+def test_suspension_exemption_does_not_leak_to_other_endpoints(active_user):
+    """The logout exemption must be exactly one path, not a general bypass."""
+    c = _auth_client(active_user)
+    active_user.status = User.Status.SUSPENDED
+    active_user.save(update_fields=["status"])
+
+    for url in (ME_URL, "/api/v1/points/my/", "/api/v1/nests/"):
+        assert c.get(url).status_code == 403, f"{url} should be blocked"
+
+
 def test_isnotsuspended_permission_allows_anonymous():
     """IsNotSuspended must PASS for anonymous callers so AllowAny endpoints
     (login/register/refresh) still work."""

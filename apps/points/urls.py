@@ -13,6 +13,7 @@ from .views import (
     LeaderboardViewSet,
     BadgeViewSet,
     PointConfigViewSet,
+    PointsPolicyViewSet,
 )
 
 router = DefaultRouter()
@@ -36,6 +37,16 @@ urlpatterns = [
         "award/",
         PointsViewSet.as_view({"post": "award"}),
         name="award-points",
+    ),
+    path(
+        "award-budget/",
+        PointsViewSet.as_view({"get": "award_budget"}),
+        name="award-budget",
+    ),
+    path(
+        "policy/",
+        PointsPolicyViewSet.as_view({"get": "list", "patch": "partial_update"}),
+        name="points-policy",
     ),
     path(
         "my-badges/",

@@ -88,17 +88,35 @@ AWARD_URL = "/api/v1/points/award/"
 class TestAwardEndpoint:
 
     def test_eagle_can_award_to_own_eaglet(self, api_client, eagle, eaglet, nest, membership):
-        """Eagle can award points to an eaglet in their nest."""
+        """Eagle can award points to an eaglet in their nest.
+
+        Amount kept within PointsPolicy.max_manual_award (Phase 31-01, default 25).
+        This test previously awarded 50, which predates the policy ceiling.
+        """
         api_client.force_authenticate(user=eagle)
         resp = api_client.post(AWARD_URL, {
             "eaglet_id": str(eaglet.id),
-            "points": 50,
+            "points": 25,
             "description": "Great performance this week",
             "nest_id": str(nest.id),
         })
         assert resp.status_code == 201
         assert resp.data["success"] is True
         assert PointTransaction.objects.filter(user=eaglet, source="manual").count() == 1
+
+    def test_award_above_policy_ceiling_returns_400(
+        self, api_client, eagle, eaglet, nest, membership
+    ):
+        """The policy ceiling is enforced through the HTTP layer, not just the service."""
+        api_client.force_authenticate(user=eagle)
+        resp = api_client.post(AWARD_URL, {
+            "eaglet_id": str(eaglet.id),
+            "points": 26,  # PointsPolicy.max_manual_award default is 25
+            "description": "Trying to exceed the ceiling",
+            "nest_id": str(nest.id),
+        })
+        assert resp.status_code == 400
+        assert not PointTransaction.objects.filter(user=eaglet, source="manual").exists()
 
     def test_eagle_cannot_award_to_eaglet_in_another_nest(
         self, api_client, eagle, other_eaglet, nest

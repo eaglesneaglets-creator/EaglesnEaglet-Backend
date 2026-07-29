@@ -52,6 +52,63 @@ class PointConfiguration(TimestampMixin, models.Model):
 
 
 # ---------------------------------------------------------------------------
+# Points Policy — governance for MANUAL awards (Phase 31-01)
+# ---------------------------------------------------------------------------
+
+class PointsPolicy(TimestampMixin, models.Model):
+    """Superadmin-controlled limits on manual point awards. Singleton (pk=1).
+
+    `PointConfiguration` above governs AUTOMATIC awards (one row per activity
+    type). It has no bearing on what a mentor can hand out by hand — before this
+    model, manual awards were bounded only by a hardcoded `max_value=1000` in
+    `ManualPointAwardSerializer`, with no rate limit at all, making 1000 points a
+    per-click figure. Since points drive `MenteeLevelConfig` thresholds and Level 5
+    sets `unlocks_mentor_application`, that was a route to manufacturing mentor
+    candidates.
+
+    Enforced in `PointService.award_manual_points()` — the single chokepoint every
+    caller passes through — NOT in the serializer (which any non-API caller bypasses).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    max_manual_award = models.PositiveIntegerField(
+        default=25,
+        help_text="Maximum points a mentor may award in a single transaction.",
+    )
+    daily_points_per_mentor = models.PositiveIntegerField(
+        default=250,
+        help_text="Maximum total points a mentor may award per day (UTC).",
+    )
+    is_enforced = models.BooleanField(
+        default=True,
+        help_text="Escape hatch — uncheck to suspend limits during an incident.",
+    )
+
+    class Meta:
+        db_table = "points_policy"
+        verbose_name_plural = "Points policies"
+
+    def __str__(self) -> str:
+        state = "enforced" if self.is_enforced else "DISABLED"
+        return (
+            f"Points policy ({state}): max {self.max_manual_award}/award, "
+            f"{self.daily_points_per_mentor}/mentor/day"
+        )
+
+    @classmethod
+    def load(cls):
+        """Return the singleton policy row, creating it with defaults if absent.
+
+        Callers never have to handle a missing row — important because the award
+        path reads this on every manual award.
+        """
+        policy = cls.objects.first()
+        if policy is None:
+            policy = cls.objects.create()
+        return policy
+
+
+# ---------------------------------------------------------------------------
 # Point Transaction — immutable ledger
 # ---------------------------------------------------------------------------
 
@@ -107,6 +164,10 @@ class PointTransaction(TimestampMixin, models.Model):
             models.Index(fields=["nest", "user"]),
             models.Index(fields=["activity_type", "created_at"]),  # New for aggregation
             models.Index(fields=["-created_at"]), # General sorting/recent filtering
+            # Phase 31-01: the per-mentor daily budget is summed from this ledger on
+            # EVERY manual award, filtered by awarder + date. Without this index that
+            # is a seq-scan over a table that only ever grows.
+            models.Index(fields=["awarded_by", "-created_at"]),
         ]
 
     def __str__(self) -> str:
