@@ -214,6 +214,54 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
         return f'{self.first_name} {self.last_name}'.strip()
 
     @property
+    def avatar_url(self):
+        """Best available profile picture URL, or None (Phase 32-01).
+
+        THE single implementation of the avatar fallback chain — serializers must
+        expose this property rather than re-deriving it. Before this existed the
+        logic was duplicated in apps/nests.UserMinimalSerializer and simply absent
+        from apps/chat.UserMinimalSerializer, which is why chat rendered initials
+        while nest cards showed photos.
+
+        Resolution order:
+          1. ``avatar``              — direct-to-storage ImageField (legacy/local)
+          2. ``profile_picture_url`` — the user's uploaded avatar OR Google SSO picture
+          3. KYC ``display_picture`` — the verification photo
+
+        NOTE on storage: the avatar endpoint writes the Cloudinary URL to
+        ``profile_picture_url`` (a URLField), NOT to ``avatar``. ``avatar`` is an
+        ImageField, so assigning an absolute URL to it makes Django treat the URL as
+        a relative storage path — ``.url`` then yields a mangled
+        ``.../media/https://res.cloudinary.com/...``. ``avatar`` is still read first
+        so any pre-existing direct-storage file keeps working.
+
+        Step 3 matters at rollout: a KYC-approved user keeps the photo already on
+        screen until they upload an avatar of their own, so nothing regresses
+        visually. The KYC record itself stays immutable after approval — this only
+        READS it.
+
+        Returns None (never '') so callers can branch on falsiness and render
+        initials.
+        """
+        if self.avatar:
+            try:
+                return self.avatar.url
+            except Exception:
+                # Missing file or unconfigured storage must never raise into a
+                # serializer and 500 an otherwise healthy response.
+                pass
+
+        if self.profile_picture_url:
+            return self.profile_picture_url
+
+        # Reverse one-to-one may not exist — a user without KYC is normal.
+        kyc = getattr(self, 'mentor_kyc', None) or getattr(self, 'mentee_kyc', None)
+        if kyc is not None and getattr(kyc, 'display_picture', ''):
+            return kyc.display_picture
+
+        return None
+
+    @property
     def is_eagle(self):
         return self.role == self.Role.EAGLE
 

@@ -27,6 +27,7 @@ from .profile import (
     MenteeProfileView,
     ProfileSubmitView,
     UploadDisplayPictureView,
+    AvatarView,
     UploadCVView,
 )
 from .oauth import (
@@ -86,6 +87,7 @@ __all__ = [
     "MenteeProfileView",
     "ProfileSubmitView",
     "UploadDisplayPictureView",
+    "AvatarView",
     "UploadCVView",
     "GoogleOAuthLoginView",
     "GoogleOAuthCallbackView",

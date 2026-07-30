@@ -15,10 +15,13 @@ class _UserSummarySerializer(serializers.Serializer):
     avatar = serializers.SerializerMethodField()
 
     def get_avatar(self, obj):
-        try:
-            return obj.avatar.url if obj.avatar else (obj.profile_picture_url or None)
-        except (AttributeError, ValueError):
-            return obj.profile_picture_url or None
+        """Delegate to User.avatar_url (Phase 32-01) — the single fallback impl.
+
+        Previously re-derived avatar → profile_picture_url here, which also missed
+        the KYC rung, so admin lists showed initials for users whose only picture
+        was their verification photo.
+        """
+        return obj.avatar_url
 
 
 class AdminRoleRequestSerializer(serializers.ModelSerializer):

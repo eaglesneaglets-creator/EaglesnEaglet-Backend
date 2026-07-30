@@ -135,12 +135,16 @@ class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
     kyc_status = serializers.SerializerMethodField()
     has_password = serializers.SerializerMethodField()
+    # Phase 32-01: resolved display URL (avatar → SSO/uploaded → KYC → None). The raw
+    # `avatar` file field is kept below so existing consumers don't break, but new
+    # code should read avatar_url.
+    avatar_url = serializers.ReadOnlyField()
 
     class Meta:
         model = User
         fields = [
             'id', 'email', 'first_name', 'last_name', 'full_name',
-            'phone_number', 'role', 'status', 'avatar', 'bio',
+            'phone_number', 'role', 'status', 'avatar', 'avatar_url', 'bio',
             'is_email_verified', 'is_phone_verified', 'date_of_birth',
             'profile_visibility',
             'is_staff', 'is_superuser', 'is_platform_staff', 'has_password',
@@ -150,7 +154,7 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id', 'email', 'role', 'status', 'is_email_verified',
             'is_phone_verified', 'is_staff', 'is_superuser',
-            'is_platform_staff', 'has_password', 'kyc_status',
+            'is_platform_staff', 'has_password', 'kyc_status', 'avatar_url',
             'created_at', 'last_login',
         ]
 

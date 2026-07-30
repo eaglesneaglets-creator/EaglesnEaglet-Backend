@@ -485,6 +485,119 @@ class UploadDisplayPictureView(APIView):
             'message': 'Profile picture uploaded successfully.'
         })
 
+class AvatarView(APIView):
+    """
+    Profile avatar — upload or remove (Phase 32-01).
+
+    POST   /api/v1/auth/me/avatar/   (multipart: avatar|file)
+    DELETE /api/v1/auth/me/avatar/
+
+    DELIBERATELY NO KYC STATUS CHECK. This is a *profile* field, not a KYC field.
+    `UploadDisplayPictureView` above intentionally blocks once KYC is
+    approved/submitted/under_review because `display_picture` is an identity
+    verification artifact (a Phase 21 immutability contract) — but that lock meant
+    every fully-onboarded user was unable to change their photo at all. Do NOT add a
+    status gate here; the two concerns are separate by design.
+
+    Storage: the Cloudinary URL is written to `profile_picture_url` (a URLField), not
+    to `avatar` (an ImageField). Assigning an absolute URL to an ImageField makes
+    Django treat it as a relative storage path, producing a mangled
+    `.../media/https://res.cloudinary.com/...`. See `User.avatar_url`.
+    """
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        file = request.FILES.get('avatar') or request.FILES.get('file')
+        if not file:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 400,
+                    'type': 'NoFile',
+                    'message': 'No file uploaded. Please select an image file.',
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Reuse the project's existing image validator (JPG/PNG/WEBP + size cap)
+        # rather than introducing a second, divergent standard.
+        try:
+            validate_image_file(file)
+        except Exception as exc:
+            return Response({
+                'success': False,
+                'error': {'code': 400, 'type': 'InvalidFile', 'message': str(exc)}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        from core.storage import upload_to_cloudinary, get_optimized_url
+        try:
+            result = upload_to_cloudinary(file, 'profile_pictures')
+        except Exception as exc:
+            logger.error("Cloudinary avatar upload failed (user %s): %s", request.user.id, exc)
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 503,
+                    'type': 'UploadFailed',
+                    'message': 'File upload failed. Please try again.',
+                }
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        secure_url = result.get('secure_url')
+        public_id = result.get('public_id')
+
+        if not secure_url:
+            return Response({
+                'success': False,
+                'error': {
+                    'code': 503,
+                    'type': 'UploadFailed',
+                    'message': 'Upload succeeded but no URL was returned. Please try again.',
+                }
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        user = request.user
+        user.profile_picture_url = secure_url
+        user.save(update_fields=['profile_picture_url'])
+
+        return Response({
+            'success': True,
+            'data': {
+                'avatar_url': user.avatar_url,
+                'optimized_url': get_optimized_url(public_id, preset='profile') if public_id else None,
+                'thumbnail_url': get_optimized_url(public_id, preset='thumbnail') if public_id else None,
+            },
+            'message': 'Profile picture updated.',
+        })
+
+    def delete(self, request):
+        """Clear the uploaded avatar.
+
+        Only clears what this endpoint owns. `avatar_url` then falls back down the
+        chain (e.g. to the KYC verification photo) rather than jumping straight to
+        initials — removing your upload should not erase a photo you never uploaded here.
+        """
+        user = request.user
+        update_fields = []
+
+        if user.profile_picture_url:
+            user.profile_picture_url = ''
+            update_fields.append('profile_picture_url')
+        if user.avatar:
+            user.avatar = None
+            update_fields.append('avatar')
+
+        if update_fields:
+            user.save(update_fields=update_fields)
+
+        return Response({
+            'success': True,
+            'data': {'avatar_url': user.avatar_url},
+            'message': 'Profile picture removed.',
+        })
+
+
 class UploadCVView(APIView):
     """
     Upload CV document (works for both Eagles and Eaglets).

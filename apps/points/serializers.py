@@ -90,10 +90,27 @@ class LeaderboardEntrySerializer(serializers.Serializer):
     first_name = serializers.CharField(source="user__first_name")
     last_name = serializers.CharField(source="user__last_name")
     role = serializers.CharField(source="user__role")
+    avatar_url = serializers.SerializerMethodField()
     total_points = serializers.IntegerField()
 
     def get_user(self, obj):
         return {"id": obj.get("user__id")}
+
+    def get_avatar_url(self, obj):
+        """Resolve the avatar from the aggregate's columns (Phase 32-01).
+
+        The leaderboard is a `.values()` aggregate of dicts, not model instances, so
+        `User.avatar_url` isn't callable here. Mirrors that property's precedence
+        using the columns selected in PointService (avatar → profile_picture_url).
+        The KYC rung is intentionally omitted — joining KYC for 50 rows isn't worth
+        it, and the leaderboard degrades to initials, which is acceptable.
+        """
+        avatar = obj.get("user__avatar")
+        if avatar:
+            # An absolute URL is stored as-is; anything else is a storage path we
+            # deliberately do not try to resolve without a model instance.
+            return avatar if str(avatar).startswith("http") else None
+        return obj.get("user__profile_picture_url") or None
 
 
 class BadgeSerializer(serializers.ModelSerializer):

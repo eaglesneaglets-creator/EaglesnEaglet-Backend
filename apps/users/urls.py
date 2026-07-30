@@ -72,6 +72,8 @@ urlpatterns = [
 
     # File Uploads (works for both roles)
     path('upload/picture/', views.UploadDisplayPictureView.as_view(), name='upload-picture'),
+    # Phase 32-01: profile avatar — always editable, independent of KYC status.
+    path('me/avatar/', views.AvatarView.as_view(), name='me-avatar'),
     path('upload/cv/', views.UploadCVView.as_view(), name='upload-cv'),
 
     # =========================================================================

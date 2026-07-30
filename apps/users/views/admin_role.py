@@ -266,10 +266,8 @@ def team_view(request):
             "is_stacked": admin.is_stacked_admin,
             "promoted_at": grant.get("created_at"),
             "promoted_source": grant.get("source"),
-            "avatar": (
-                admin.avatar.url if admin.avatar
-                else (admin.profile_picture_url or None)
-            ),
+            # Phase 32-01: single fallback impl on the model.
+            "avatar": admin.avatar_url,
         })
     return _ok(TeamMemberSerializer(members, many=True).data)
 
