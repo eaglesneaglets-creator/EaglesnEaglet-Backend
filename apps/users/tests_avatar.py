@@ -36,6 +36,30 @@ def _png(name="pic.png", size_kb=10):
 
 
 @pytest.fixture
+def fake_cloudinary(monkeypatch):
+    """Stub the ENTIRE Cloudinary surface the avatar view touches.
+
+    The view calls `upload_to_cloudinary` AND `get_optimized_url`. Stubbing only the
+    first left `get_optimized_url` hitting the real SDK, which needs `cloud_name` —
+    configured in settings/local.py and production.py but NOT settings/test.py. That
+    passed locally (the cloudinary singleton happened to be configured in-process) and
+    failed in CI's clean process. A unit test must not depend on third-party config.
+
+    Returns the URL the stub "uploads" to, so tests can assert on it.
+    """
+    url = "https://cdn.example.com/new-avatar.jpg"
+    monkeypatch.setattr(
+        "core.storage.upload_to_cloudinary",
+        lambda f, t, **k: {"secure_url": url, "public_id": "abc123"},
+    )
+    monkeypatch.setattr(
+        "core.storage.get_optimized_url",
+        lambda public_id, **k: f"https://cdn.example.com/{public_id}-optimized.jpg",
+    )
+    return url
+
+
+@pytest.fixture
 def mentor(user_factory):
     return user_factory(email="avatar_mentor@test.com", role="eagle",
                         first_name="Ama", last_name="Mentor")
@@ -113,34 +137,56 @@ def test_fallback_is_the_only_implementation():
 # AC-1 / AC-2 / AC-4: upload, delete, validation
 # ---------------------------------------------------------------------------
 
-def test_approved_kyc_user_can_upload_avatar(api_client, approved_mentor, monkeypatch):
+def test_approved_kyc_user_can_upload_avatar(api_client, approved_mentor, fake_cloudinary):
     """THE headline fix: approval must not block a profile-picture change."""
-    monkeypatch.setattr(
-        "core.storage.upload_to_cloudinary",
-        lambda f, t, **k: {"secure_url": "https://cdn.example.com/new-avatar.jpg",
-                           "public_id": "abc123"},
-    )
     resp = _auth(api_client, approved_mentor).post(
         AVATAR_URL, {"avatar": _png()}, format="multipart"
     )
     assert resp.status_code == 200, resp.data
-    assert resp.json()["data"]["avatar_url"] == "https://cdn.example.com/new-avatar.jpg"
+    assert resp.json()["data"]["avatar_url"] == fake_cloudinary
 
     approved_mentor.refresh_from_db()
-    assert approved_mentor.avatar_url == "https://cdn.example.com/new-avatar.jpg"
+    assert approved_mentor.avatar_url == fake_cloudinary
 
 
-def test_upload_does_not_touch_the_kyc_record(api_client, approved_mentor, monkeypatch):
+def test_upload_does_not_touch_the_kyc_record(api_client, approved_mentor, fake_cloudinary):
     """KYC display_picture is a verification artifact — must stay immutable."""
-    monkeypatch.setattr(
-        "core.storage.upload_to_cloudinary",
-        lambda f, t, **k: {"secure_url": "https://cdn.example.com/new.jpg", "public_id": "x"},
-    )
     _auth(api_client, approved_mentor).post(AVATAR_URL, {"avatar": _png()}, format="multipart")
 
     kyc = MentorKYC.objects.get(user=approved_mentor)
     assert kyc.display_picture == "https://cdn.example.com/kyc-verification-photo.jpg"
     assert kyc.status == "approved"
+
+
+def test_upload_succeeds_even_if_optimized_url_generation_fails(
+    api_client, approved_mentor, monkeypatch
+):
+    """A Cloudinary config/SDK problem must not discard a successful upload.
+
+    Regression guard for the CI failure: `get_optimized_url` raised
+    ValueError('Must supply cloud_name...') AFTER the avatar was already saved,
+    turning a working upload into a 500. Derived URLs are decoration, not contract.
+    """
+    monkeypatch.setattr(
+        "core.storage.upload_to_cloudinary",
+        lambda f, t, **k: {"secure_url": "https://cdn.example.com/saved.jpg",
+                           "public_id": "pid"},
+    )
+
+    def _boom(*a, **k):
+        raise ValueError("Must supply cloud_name in tag or in configuration")
+
+    monkeypatch.setattr("core.storage.get_optimized_url", _boom)
+
+    resp = _auth(api_client, approved_mentor).post(
+        AVATAR_URL, {"avatar": _png()}, format="multipart"
+    )
+    assert resp.status_code == 200, resp.data
+    data = resp.json()["data"]
+    # The avatar still saved; only the decorations are absent.
+    assert data["avatar_url"] == "https://cdn.example.com/saved.jpg"
+    assert data["optimized_url"] is None
+    assert data["thumbnail_url"] is None
 
 
 def test_delete_falls_back_to_kyc_photo(api_client, approved_mentor):

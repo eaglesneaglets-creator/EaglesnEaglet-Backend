@@ -561,12 +561,28 @@ class AvatarView(APIView):
         user.profile_picture_url = secure_url
         user.save(update_fields=['profile_picture_url'])
 
+        # Derived URLs are a nice-to-have, not part of the contract. The upload has
+        # already succeeded and the avatar is saved by this point, so a Cloudinary
+        # config/SDK problem here must NOT turn a successful upload into a 500 —
+        # `avatar_url` alone is enough for every caller.
+        def _optimized(preset):
+            if not public_id:
+                return None
+            try:
+                return get_optimized_url(public_id, preset=preset)
+            except Exception as exc:
+                logger.warning(
+                    "Could not build %s URL for avatar (user %s): %s",
+                    preset, user.id, exc,
+                )
+                return None
+
         return Response({
             'success': True,
             'data': {
                 'avatar_url': user.avatar_url,
-                'optimized_url': get_optimized_url(public_id, preset='profile') if public_id else None,
-                'thumbnail_url': get_optimized_url(public_id, preset='thumbnail') if public_id else None,
+                'optimized_url': _optimized('profile'),
+                'thumbnail_url': _optimized('thumbnail'),
             },
             'message': 'Profile picture updated.',
         })
