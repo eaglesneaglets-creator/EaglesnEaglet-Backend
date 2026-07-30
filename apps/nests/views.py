@@ -198,11 +198,9 @@ class NestViewSet(ViewSet):
                 "last_name": m.user.last_name,
                 "full_name": m.user.full_name,
                 "email": m.user.email,
-                "avatar_url": (
-                    m.user.avatar.url
-                    if m.user.avatar
-                    else m.user.profile_picture_url or None
-                ),
+                # Phase 32-01: single fallback impl on the model (also covers the
+                # KYC photo, which this inline version missed).
+                "avatar_url": m.user.avatar_url,
             }
             for m in memberships
         ]

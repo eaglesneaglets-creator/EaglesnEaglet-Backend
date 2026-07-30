@@ -9,6 +9,11 @@ from .models import Conversation, Message
 class UserMinimalSerializer(serializers.ModelSerializer):
     # User model has no get_full_name() method, so use SerializerMethodField.
     full_name = serializers.SerializerMethodField()
+    # Phase 32-01: this serializer previously sent NO avatar, which is why chat
+    # rendered initials while nest cards showed real photos — the UI was never the
+    # limitation, the payload was. Sources User.avatar_url (the single fallback
+    # implementation); never re-derive the chain here.
+    avatar_url = serializers.ReadOnlyField()
 
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
@@ -20,7 +25,7 @@ class UserMinimalSerializer(serializers.ModelSerializer):
         # chat header. Without these the header can only guess Mentor/Mentee.
         fields = [
             "id", "first_name", "last_name", "full_name", "role",
-            "is_platform_staff", "is_superuser",
+            "is_platform_staff", "is_superuser", "avatar_url",
         ]
 
 

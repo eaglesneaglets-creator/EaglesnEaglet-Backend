@@ -317,7 +317,14 @@ class PointService:
             qs = qs.filter(created_at__gte=timezone.now() - timedelta(days=7))
 
         return (
-            qs.values("user__id", "user__first_name", "user__last_name", "user__role")
+            # Phase 32-01: avatar source columns are selected here so the leaderboard
+            # can render real photos. This is a .values() aggregate (dicts, not model
+            # instances), so User.avatar_url can't be called — the serializer resolves
+            # the same precedence from these columns instead.
+            qs.values(
+                "user__id", "user__first_name", "user__last_name", "user__role",
+                "user__avatar", "user__profile_picture_url",
+            )
             .annotate(total_points=Sum("points"))
             .filter(total_points__gt=0)
             .order_by("-total_points")[:50]

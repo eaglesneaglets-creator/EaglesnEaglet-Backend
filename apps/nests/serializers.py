@@ -45,13 +45,14 @@ class UserMinimalSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_avatar_url(self, obj):
-        """Return the best available avatar URL."""
-        if obj.avatar:
-            try:
-                return obj.avatar.url
-            except Exception:
-                pass
-        return obj.profile_picture_url or None
+        """Delegate to User.avatar_url — the single fallback implementation.
+
+        Phase 32-01: this method previously carried its own copy of the chain
+        (avatar → profile_picture_url) and, unlike the model property, never fell
+        back to the KYC display_picture. Keeping the field name and shape identical
+        so Phase 28 mentor cards and every other nests consumer are unaffected.
+        """
+        return obj.avatar_url
 
 
 # ---------------------------------------------------------------------------
