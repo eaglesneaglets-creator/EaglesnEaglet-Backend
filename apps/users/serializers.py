@@ -161,20 +161,41 @@ class UserSerializer(serializers.ModelSerializer):
     def get_has_password(self, obj):
         return obj.has_usable_password()
 
+    # Reverse one-to-one accessors raise RelatedObjectDoesNotExist when the row is
+    # absent, so `hasattr` is False both when the relation was never fetched AND
+    # when it was fetched and is genuinely empty. The old code could not tell those
+    # apart and re-queried for every user without a KYC row — measured as 19 extra
+    # queries on a 20-row admin page where 19 eaglets had no KYC. Django records
+    # what select_related actually loaded in `_state.fields_cache`, which
+    # distinguishes the two cases exactly.
+    @staticmethod
+    def _cached_relation(obj, name):
+        """Return the prefetched related object, or False if it wasn't loaded.
+
+        `None` is a real answer (loaded, but no row exists) and must be
+        distinguishable from "not loaded", hence the False sentinel.
+        """
+        cache = getattr(obj, '_state', None)
+        fields_cache = getattr(cache, 'fields_cache', None) if cache else None
+        if fields_cache is not None and name in fields_cache:
+            return fields_cache[name]
+        return False
+
     def get_kyc_status(self, obj):
-        """Get KYC status — uses prefetched relation if available to avoid N+1."""
+        """Get KYC status — uses the prefetched relation if available to avoid N+1."""
         if obj.role == 'eagle':
-            # Use cached reverse relation if prefetched via select_related, otherwise query
-            if hasattr(obj, 'mentor_kyc'):
-                return obj.mentor_kyc.status
-            kyc = MentorKYC.objects.filter(user=obj).first()
-            return kyc.status if kyc else None
+            relation, model = 'mentor_kyc', MentorKYC
         elif obj.role == 'eaglet':
-            if hasattr(obj, 'mentee_kyc'):
-                return obj.mentee_kyc.status
-            kyc = MenteeKYC.objects.filter(user=obj).first()
-            return kyc.status if kyc else None
-        return None
+            relation, model = 'mentee_kyc', MenteeKYC
+        else:
+            return None
+
+        cached = self._cached_relation(obj, relation)
+        if cached is not False:
+            return cached.status if cached else None
+
+        kyc = model.objects.filter(user=obj).first()
+        return kyc.status if kyc else None
 
 
 class AdminUserSerializer(UserSerializer):

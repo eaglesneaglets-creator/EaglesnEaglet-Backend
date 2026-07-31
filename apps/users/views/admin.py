@@ -825,7 +825,13 @@ class AdminUserListView(APIView):
         page = max(1, int(request.GET.get('page', 1)))
         per_page = min(max(1, int(request.GET.get('per_page', 20))), 100)
 
-        qs = User.objects.all()
+        # `select_related` on the KYC rows is load-bearing, not decorative:
+        # the serializer exposes `User.avatar_url`, whose fallback chain reaches
+        # for `mentor_kyc`/`mentee_kyc` (Phase 32-01). Without this, serializing
+        # a page of N users issued N extra queries — measured at 63 queries for a
+        # 20-row page, and this view allows per_page up to 100.
+        # Mirrors apps/nests/views.py:107, which already selects `eagle__mentor_kyc`.
+        qs = User.objects.select_related('mentor_kyc', 'mentee_kyc')
 
         # Annotate with activity metrics
         qs = qs.annotate(
