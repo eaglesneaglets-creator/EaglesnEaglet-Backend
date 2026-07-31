@@ -19,8 +19,14 @@ import logging
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-from rest_framework_simplejwt.tokens import AccessToken
+
+from core.ws_auth import WS_UNAUTHENTICATED, authenticate_ws
+from core.ws_throttle import (
+    CHAT_MESSAGE_BUCKET,
+    CHAT_READ_BUCKET,
+    RateLimitExceeded,
+    TokenBucket,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +37,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         self.conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
         self.group_name = f"chat_{self.conversation_id}"
 
-        token = self._get_token_from_cookie()
-        user = await self._authenticate(token)
+        # Shared helper: validates the token AND re-reads account state, so a
+        # suspended/deactivated user's still-valid token cannot hold a socket.
+        user = await authenticate_ws(self.scope)
         if user is None:
-            await self.close(code=4001)
+            await self.close(code=WS_UNAUTHENTICATED)
             return
 
         # Verify the user is a participant in this conversation
@@ -49,6 +56,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             return
 
         self.user = user
+        # Per-connection throttles. Frames bypass DRF's throttling entirely, so
+        # without these one socket could persist messages as fast as the network
+        # allowed (measured: 50 in 0.44s) and fan each one out to the group.
+        self._send_bucket = TokenBucket(**CHAT_MESSAGE_BUCKET)
+        self._read_bucket = TokenBucket(**CHAT_READ_BUCKET)
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
         logger.info(
@@ -62,6 +74,26 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
     async def receive_json(self, content, **kwargs):
         msg_type = content.get("type")
+
+        # Throttle at the dispatch point so every frame type is covered and no
+        # handler can be added later that forgets to check.
+        bucket = {
+            "chat.message": getattr(self, "_send_bucket", None),
+            "chat.read": getattr(self, "_read_bucket", None),
+        }.get(msg_type)
+        if bucket is not None:
+            try:
+                bucket.consume()
+            except RateLimitExceeded as exc:
+                # Report rather than disconnect: a legitimate fast typer should
+                # be slowed, not dropped mid-conversation.
+                await self.send_json({
+                    "type": "error",
+                    "code": "rate_limited",
+                    "message": "You're sending messages too quickly. Please slow down.",
+                    "retry_after": round(exc.retry_after, 1),
+                })
+                return
 
         if msg_type == "chat.message":
             await self._handle_send_message(content.get("content", ""))
@@ -138,33 +170,8 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
     # ── Auth helpers ────────────────────────────────────────────────────────
 
-    def _get_token_from_cookie(self) -> str | None:
-        """Read JWT from the query string (?token=) or the httpOnly access_token cookie.
-
-        Cross-origin WebSocket upgrades (frontend and backend on different Railway
-        subdomains in the Public Suffix List) cause Chrome to block cookies even
-        with SameSite=None. Query string token is the reliable fallback.
-        """
-        from urllib.parse import parse_qs
-        qs = parse_qs(self.scope.get("query_string", b"").decode())
-        if token := qs.get("token", [None])[0]:
-            return token
-        cookies = self.scope.get("cookies", {})
-        return cookies.get("access_token")
-
-    async def _authenticate(self, token_str: str | None):
-        if not token_str:
-            return None
-        try:
-            token = AccessToken(token_str)
-            user_id = token["user_id"]
-            from apps.users.models import User
-            return await database_sync_to_async(User.objects.get)(id=user_id)
-        except (InvalidToken, TokenError):
-            return None
-        except Exception:
-            logger.exception("Unexpected error during ChatConsumer authentication")
-            return None
+    # Token reading + user resolution live in core.ws_auth so this consumer and
+    # NotificationConsumer cannot drift apart on account-state checks.
 
     async def _has_active_program(self, user) -> bool:
         """Eagles + admins bypass; eaglets need an ACTIVE ProgramEnrollment."""

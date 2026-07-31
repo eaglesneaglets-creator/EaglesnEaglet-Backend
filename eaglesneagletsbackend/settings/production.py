@@ -40,11 +40,24 @@ if not any(h for h in ALLOWED_HOSTS if h not in ('healthcheck.railway.app', '.up
 # environments that configure the connection piece-by-piece.
 _database_url = config('DATABASE_URL', default=None)
 
+# Persistent connections must be OFF under ASGI (we serve with Daphne).
+# CONN_MAX_AGE assumes the sync-WSGI model of one request per worker at a time;
+# under ASGI each concurrent request can land on its own thread, and every
+# thread holds its own connection open for the full CONN_MAX_AGE window. With a
+# 10-minute window those connections accumulate until Postgres hits
+# max_connections and new cursors fail with "Multiple connection attempts
+# failed" — which surfaces on the first query of any request (typically JWT
+# get_user), not at the real fault site.
+#
+# 0 = close after each request. Raise this ONLY when a real pooler (pgBouncer)
+# sits in front of Postgres; then the pooler, not Django, owns connection reuse.
+_CONN_MAX_AGE = config('DB_CONN_MAX_AGE', default=0, cast=int)
+
 if _database_url:
     DATABASES = {
         'default': dj_database_url.parse(
             _database_url,
-            conn_max_age=600,
+            conn_max_age=_CONN_MAX_AGE,
             conn_health_checks=True,
             ssl_require=True,
         )
@@ -62,7 +75,7 @@ else:
             'PASSWORD': config('PGPASSWORD', default=config('DB_PASSWORD', default='')),
             'HOST': config('PGHOST', default=config('DB_HOST', default='localhost')),
             'PORT': config('PGPORT', default=config('DB_PORT', default='5432')),
-            'CONN_MAX_AGE': 600,
+            'CONN_MAX_AGE': _CONN_MAX_AGE,
             'CONN_HEALTH_CHECKS': True,
             'OPTIONS': {
                 'connect_timeout': 10,
@@ -364,9 +377,15 @@ LOGGING = {
             'level': 'CRITICAL',
             'propagate': False,
         },
+        # WARNING (not INFO) by default: RequestLoggingMiddleware emits one
+        # 'Request completed' INFO line per request, which on a dashboard mount
+        # (~8 parallel calls per user) blew past Railway's 500 logs/sec ingest
+        # cap and DROPPED real errors — 13,873 messages lost in one incident.
+        # Warnings and errors still ship. Set APP_LOG_LEVEL=INFO temporarily
+        # when you need full request tracing.
         'apps': {
             'handlers': ['console'],
-            'level': 'INFO',
+            'level': config('APP_LOG_LEVEL', default='WARNING'),
             'propagate': False,
         },
         'celery': {
