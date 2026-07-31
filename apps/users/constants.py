@@ -97,7 +97,13 @@ KYC_STATUS_CHOICES = [
 # FILE UPLOAD SETTINGS
 # =============================================================================
 MAX_CV_SIZE_MB = 5
-MAX_IMAGE_SIZE_MB = 2
+# 5 MB, not 2: KYC display pictures are usually shot on a phone, and a modern
+# phone photo is 3-8 MB. A 2 MB cap rejected ordinary ID/selfie uploads on the
+# first try, which read to users as "the form is broken". The frontend also
+# downscales before upload (see compress-image.js), so this ceiling is a
+# backstop for un-compressible or unusually large files rather than the
+# common path.
+MAX_IMAGE_SIZE_MB = 5
 ALLOWED_CV_EXTENSIONS = ['pdf', 'docx']
 ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
 
