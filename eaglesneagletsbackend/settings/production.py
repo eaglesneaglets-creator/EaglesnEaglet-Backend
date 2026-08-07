@@ -172,7 +172,10 @@ SESSION_COOKIE_AGE = 900  # 15 minutes
 
 CSRF_COOKIE_SECURE = True
 CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SAMESITE = 'Lax'
+# The supported Vercel/Railway split deployment is cross-site. The CSRF header
+# remains mandatory; SameSite=None only allows the matching CSRF cookie to
+# accompany that legitimate credentialed request.
+CSRF_COOKIE_SAMESITE = 'None'
 CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', cast=Csv(), default='')
 
 # Auth-cookie domain. Set to a leading-dot parent domain (e.g.
@@ -446,6 +449,18 @@ HEALTH_CHECK_TOKEN = config('HEALTH_CHECK_TOKEN', default=None)
 # 5000/hour ≈ 80/min, comfortable for any single user's real activity but
 # still rejects abusive scripted scrapes. Tune via Railway env if needed.
 import os as _os
+
+# CRITICAL for correct per-client throttling behind Railway's proxy.
+# DRF's throttles identify anonymous clients via `get_ident()`, which without
+# NUM_PROXIES trusts REMOTE_ADDR — behind Railway that is the PROXY's address
+# (the 100.64.0.0/10 range seen in access logs), not the visitor's. Every
+# anonymous user on the platform therefore shared a single 'anon' bucket, so a
+# handful of concurrent visitors could 429 everyone else. With NUM_PROXIES set,
+# DRF reads the correct entry from X-Forwarded-For and each client gets its own
+# bucket. Matches core.middleware.security.get_client_ip, which already handled
+# the proxy correctly for its own rate limiting.
+REST_FRAMEWORK['NUM_PROXIES'] = int(_os.environ.get('NUM_PROXIES', '1'))
+
 REST_FRAMEWORK.setdefault('DEFAULT_THROTTLE_RATES', {})
 REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'].update({
     'user': _os.environ.get('THROTTLE_USER_RATE', '5000/hour'),

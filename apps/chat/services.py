@@ -131,6 +131,9 @@ class ChatService:
         Bulk-create MessageRead records for all unread messages in the conversation.
         Returns count of newly marked messages.
         """
+        if not conversation.participants.filter(id=user.id).exists():
+            raise PermissionDenied("You are not a participant in this conversation.")
+
         already_read = MessageRead.objects.filter(
             user=user,
             message__conversation=conversation,

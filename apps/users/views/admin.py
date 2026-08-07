@@ -831,7 +831,14 @@ class AdminUserListView(APIView):
         # a page of N users issued N extra queries — measured at 63 queries for a
         # 20-row page, and this view allows per_page up to 100.
         # Mirrors apps/nests/views.py:107, which already selects `eagle__mentor_kyc`.
-        qs = User.objects.select_related('mentor_kyc', 'mentee_kyc')
+        # Deleted accounts are soft-deleted (deleted_at set, PII anonymized to
+        # deleted_<uuid>@deleted.invalid) so historical records that reference
+        # them stay intact. They must NOT appear in user management: the stats
+        # cards above already exclude them, so without this the table showed a
+        # ghost row and a count that disagreed with the cards.
+        qs = User.objects.filter(deleted_at__isnull=True).select_related(
+            'mentor_kyc', 'mentee_kyc'
+        )
 
         # Annotate with activity metrics
         qs = qs.annotate(

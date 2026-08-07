@@ -42,10 +42,10 @@ class ConversationViewSet(ViewSet):
             )
         try:
             from apps.users.models import User
-            other_user = User.objects.get(id=user_id)
-        except (User.DoesNotExist, Exception):
+            other_user = ChatService.get_chattable_contacts(request.user).get(id=user_id)
+        except (ValueError, TypeError, User.DoesNotExist):
             return Response(
-                {"success": False, "error": {"message": "User not found."}},
+                {"success": False, "error": {"message": "User is not available for messaging."}},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -97,7 +97,22 @@ class NestConversationView(APIView):
         try:
             from apps.nests.models import Nest
             nest = Nest.objects.get(id=nest_id)
-        except (Exception,):
+        except Nest.DoesNotExist:
+            return Response(
+                {"success": False, "error": {"message": "Nest not found."}},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        from apps.nests.models import NestMembership
+        can_access = (
+            request.user.is_staff
+            or request.user.is_admin
+            or nest.eagle_id == request.user.id
+            or NestMembership.objects.filter(
+                nest=nest, user=request.user, status="active"
+            ).exists()
+        )
+        if not can_access:
             return Response(
                 {"success": False, "error": {"message": "Nest not found."}},
                 status=status.HTTP_404_NOT_FOUND,

@@ -20,7 +20,6 @@ either cause. They deliberately use a fixed cap while varying row count: if the
 count scales with rows, the cap is breached and the N+1 is back.
 """
 import pytest
-from django.urls import reverse
 from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.users.models import User, MenteeKYC
@@ -102,3 +101,27 @@ def test_kyc_status_still_correct_when_relation_is_populated(client):
     rows = [r for r in resp.json()["data"]["users"] if r["email"].startswith("qguard-eaglet")]
     assert len(rows) == 3
     assert all(r["kyc_status"] == "approved" for r in rows), [r["kyc_status"] for r in rows]
+
+
+@pytest.mark.django_db
+def test_soft_deleted_users_are_excluded_from_admin_list_and_total(client):
+    """Anonymized accounts remain in the database, but not user management."""
+    visible_user = _make_eaglets(1)[0]
+    deleted_user = User.objects.create_user(
+        email="qguard-deleted@test.local",
+        password="x",
+        first_name="Deleted",
+        last_name="User",
+        role="eaglet",
+    )
+    deleted_user.soft_delete()
+    c = _admin_client(client)
+
+    response = c.get("/api/v1/auth/admin/users/?per_page=100")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    returned_ids = {row["id"] for row in payload["users"]}
+    assert str(visible_user.id) in returned_ids
+    assert str(deleted_user.id) not in returned_ids
+    assert payload["pagination"]["total"] == len(payload["users"])

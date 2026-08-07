@@ -2,6 +2,7 @@
 
 from .auth import (
     RegisterView,
+    CsrfTokenView,
     LoginView,
     LogoutView,
     CustomTokenRefreshView,
@@ -66,6 +67,7 @@ from .mentor_application import (
 
 __all__ = [
     "RegisterView",
+    "CsrfTokenView",
     "LoginView",
     "LogoutView",
     "CustomTokenRefreshView",

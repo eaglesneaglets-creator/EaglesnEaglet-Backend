@@ -131,3 +131,12 @@ class TestMarkRead:
         ChatService.mark_conversation_read(conv, eaglet)
         ChatService.mark_conversation_read(conv, eaglet)  # should not raise
         assert MessageRead.objects.filter(user=eaglet).count() == 1
+
+    def test_non_participant_cannot_mark_read(self, eagle, eaglet, eaglet2):
+        conv = ChatService.get_or_create_dm(eagle, eaglet)
+        ChatService.create_message(conv, eagle, "private")
+
+        with pytest.raises(PermissionDenied):
+            ChatService.mark_conversation_read(conv, eaglet2)
+
+        assert not MessageRead.objects.filter(user=eaglet2).exists()

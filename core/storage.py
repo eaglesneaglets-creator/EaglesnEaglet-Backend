@@ -82,6 +82,17 @@ UPLOAD_CONTEXTS = {
             'text/plain',
         },
     },
+    'nest_media': {
+        'folder': 'misc',
+        'max_bytes': 50 * 1024 * 1024,
+        'allowed_mime': {
+            'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+            'video/mp4', 'video/quicktime', 'video/webm',
+            'application/pdf', 'text/plain',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        },
+    },
     'profile_picture': {
         'folder': 'profile_pictures',
         'max_bytes': 5 * 1024 * 1024,
@@ -107,6 +118,32 @@ UPLOAD_CONTEXTS = {
         },
     },
 }
+
+
+def _matches_declared_file_type(file, mime: str) -> bool:
+    """Perform a small magic-byte check for the public generic media route."""
+    position = file.tell() if hasattr(file, 'tell') else None
+    header = file.read(16)
+    if position is not None and hasattr(file, 'seek'):
+        file.seek(position)
+
+    checks = {
+        'image/jpeg': lambda h: h.startswith(b'\xff\xd8\xff'),
+        'image/png': lambda h: h.startswith(b'\x89PNG\r\n\x1a\n'),
+        'image/gif': lambda h: h.startswith((b'GIF87a', b'GIF89a')),
+        'image/webp': lambda h: h.startswith(b'RIFF') and h[8:12] == b'WEBP',
+        'application/pdf': lambda h: h.startswith(b'%PDF-'),
+        'video/mp4': lambda h: len(h) >= 12 and h[4:8] == b'ftyp',
+        'video/quicktime': lambda h: len(h) >= 12 and h[4:8] == b'ftyp',
+        'video/webm': lambda h: h.startswith(b'\x1aE\xdf\xa3'),
+        'application/msword': lambda h: h.startswith(b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'),
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': (
+            lambda h: h.startswith(b'PK\x03\x04')
+        ),
+        'text/plain': lambda h: b'\x00' not in h,
+    }
+    check = checks.get(mime)
+    return bool(check and check(header))
 
 
 def upload_validated(file, *, context: str, **kwargs):
@@ -137,6 +174,11 @@ def upload_validated(file, *, context: str, **kwargs):
                 f'File type {mime!r} not allowed for this upload. '
                 f'Allowed: {", ".join(sorted(rules["allowed_mime"]))}.'
             ),
+        })
+
+    if context == 'nest_media' and not _matches_declared_file_type(file, mime):
+        raise DRFValidationError({
+            'file': 'File contents do not match the declared file type.',
         })
 
     return upload_to_cloudinary(file, file_type=rules['folder'], **kwargs)

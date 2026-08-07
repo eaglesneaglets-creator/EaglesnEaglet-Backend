@@ -5,6 +5,10 @@ Optimized for fast test execution.
 Run with: pytest --ds=eaglesneagletsbackend.settings.test
 """
 
+import os
+
+import dj_database_url
+
 from .base import *
 
 SECRET_KEY = 'test-secret-key-not-for-production'
@@ -20,11 +24,16 @@ ALLOWED_HOSTS = ['testserver', 'localhost', '127.0.0.1']
 
 
 # Use SQLite for faster tests (or in-memory PostgreSQL)
+_test_database_url = os.environ.get('TEST_DATABASE_URL')
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': ':memory:',
-    }
+    'default': (
+        dj_database_url.parse(_test_database_url, conn_max_age=0)
+        if _test_database_url
+        else {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': ':memory:',
+        }
+    )
 }
 
 

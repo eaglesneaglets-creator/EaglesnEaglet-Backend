@@ -88,7 +88,7 @@ class TestConversationList:
 
 
 class TestCreateDM:
-    def test_create_dm(self, api_client, eagle, eaglet):
+    def test_create_dm(self, api_client, eagle, eaglet, nest):
         api_client.force_authenticate(user=eagle)
         resp = api_client.post("/api/v1/chat/conversations/dm/", {
             "user_id": str(eaglet.id)
@@ -96,11 +96,24 @@ class TestCreateDM:
         assert resp.status_code == 201
         assert resp.data["data"]["conversation_type"] == "direct"
 
-    def test_create_dm_idempotent(self, api_client, eagle, eaglet):
+    def test_create_dm_idempotent(self, api_client, eagle, eaglet, nest):
         api_client.force_authenticate(user=eagle)
         resp1 = api_client.post("/api/v1/chat/conversations/dm/", {"user_id": str(eaglet.id)})
         resp2 = api_client.post("/api/v1/chat/conversations/dm/", {"user_id": str(eaglet.id)})
         assert resp1.data["data"]["id"] == resp2.data["data"]["id"]
+
+    def test_cannot_dm_user_outside_allowed_contacts(self, api_client, eagle):
+        outsider = User.objects.create_user(
+            email="unrelated@test.com", password="pass123", role="eaglet",
+        )
+        api_client.force_authenticate(user=eagle)
+
+        resp = api_client.post(
+            "/api/v1/chat/conversations/dm/", {"user_id": str(outsider.id)}
+        )
+
+        assert resp.status_code == 404
+        assert not Conversation.objects.filter(participants=eagle).exists()
 
 
 class TestMessageList:
@@ -131,6 +144,18 @@ class TestMarkRead:
         resp = api_client.post(f"/api/v1/chat/conversations/{conv.id}/read/")
         assert resp.status_code == 200
 
+    def test_non_participant_cannot_mark_conversation_read(self, api_client, eagle, eaglet):
+        conv = ChatService.get_or_create_dm(eagle, eaglet)
+        ChatService.create_message(conv, eagle, "private")
+        outsider = User.objects.create_user(
+            email="read-outsider@test.com", password="pass123", role="eagle",
+        )
+        api_client.force_authenticate(user=outsider)
+
+        resp = api_client.post(f"/api/v1/chat/conversations/{conv.id}/read/")
+
+        assert resp.status_code == 403
+
 
 class TestNestConversation:
     def test_get_or_create_nest_conversation(self, api_client, eagle, nest):
@@ -138,6 +163,18 @@ class TestNestConversation:
         resp = api_client.get(f"/api/v1/chat/nest/{nest.id}/conversation/")
         assert resp.status_code == 200
         assert resp.data["data"]["conversation_type"] == "nest_group"
+
+    def test_outsider_cannot_view_nest_conversation(self, api_client, nest):
+        outsider = User.objects.create_user(
+            email="nest-outsider@test.com", password="pass123", role="eagle",
+        )
+        conversation = ChatService.get_or_create_nest_conversation(nest)
+        ChatService.create_message(conversation, nest.eagle, "private nest message")
+        api_client.force_authenticate(user=outsider)
+
+        resp = api_client.get(f"/api/v1/chat/nest/{nest.id}/conversation/")
+
+        assert resp.status_code == 404
 
 
 class TestChattableContacts:
