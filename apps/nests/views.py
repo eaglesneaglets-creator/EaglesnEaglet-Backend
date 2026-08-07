@@ -74,7 +74,7 @@ class NestViewSet(ViewSet):
             nests = NestService.get_public_nests()
 
         # Fix N+1: Annotate member_count and is_full
-        nests = _annotate_nest_counts(nests)
+        nests = _annotate_nest_counts(nests).order_by("-created_at", "-id")
 
         paginator = StandardResultsSetPagination()
         page = paginator.paginate_queryset(nests, request)
@@ -453,23 +453,13 @@ class UploadMediaView(APIView):
     """Upload a file to Cloudinary. Returns { url, type }."""
 
     permission_classes = [IsAuthenticated]
-    MAX_UPLOAD_SIZE = 52_428_800  # 50 MB
-
     def post(self, request):
         file = request.FILES.get("file")
         if not file:
             return Response({"error": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
-        if file.size > self.MAX_UPLOAD_SIZE:
-            return Response({"error": "File too large. Max 50 MB."}, status=status.HTTP_400_BAD_REQUEST)
 
-        from core.storage import upload_to_cloudinary
-        try:
-            result = upload_to_cloudinary(file, file_type="misc")
-        except Exception:
-            return Response(
-                {"error": "Upload failed. Please try again."},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
+        from core.storage import upload_validated
+        result = upload_validated(file, context="nest_media")
 
         cloudinary_type = result.get("resource_type", "raw")
         media_type = "image" if cloudinary_type == "image" else "video" if cloudinary_type == "video" else "file"

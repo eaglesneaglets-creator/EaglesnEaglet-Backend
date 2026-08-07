@@ -7,6 +7,7 @@ Auto-extracted from monolithic views.py during Phase 11.5-04 split.
 import logging
 
 from django.conf import settings
+from django.middleware.csrf import get_token
 from rest_framework import serializers, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -90,6 +91,18 @@ def _clear_auth_cookies(response) -> None:
     response.delete_cookie('refresh_token', path='/', samesite=samesite, domain=cookie_domain)
 
 
+class CsrfTokenView(APIView):
+    """Issue a masked CSRF token and ensure the CSRF cookie is present."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        response = Response({'success': True, 'csrf_token': get_token(request)})
+        response['Cache-Control'] = 'no-store'
+        return response
+
+
 
 class RegisterView(APIView):
     """
@@ -171,16 +184,6 @@ class LoginView(TokenObtainPairView):
                     'data': {
                         'user': user_data,
                         'access': access,
-                        # SECURITY TRADE-OFF (temporary — until same-origin
-                        # domain is available):
-                        # Refresh token is also returned in JSON so the FE
-                        # can stash it in localStorage and survive cross-
-                        # origin deploys where the HttpOnly cookie below is
-                        # treated as third-party and blocked. XSS can
-                        # exfiltrate this token. Once FE + BE share a
-                        # parent domain (eTLD+1), DROP this line and rely
-                        # solely on the cookie. See audit P0 #1.
-                        'refresh': refresh,
                     },
                 })
                 _set_auth_cookies(api_response, access, refresh)
@@ -274,6 +277,10 @@ class CustomTokenRefreshView(TokenRefreshView):
     throttle_classes = [RefreshRateThrottle]  # Phase 26-01: cap refresh-token abuse
 
     def post(self, request, *args, **kwargs):
+        if request.COOKIES.get('refresh_token'):
+            from core.authentication import enforce_csrf
+            enforce_csrf(request)
+
         # Read refresh token from cookie first, fall back to request body.
         # We call TokenRefreshSerializer directly so we control the input data,
         # avoiding the DRF request._full_data / _data caching issue.
@@ -297,16 +304,9 @@ class CustomTokenRefreshView(TokenRefreshView):
             access = serializer.validated_data.get('access')
             rotated_refresh = serializer.validated_data.get('refresh')  # present when ROTATE_REFRESH_TOKENS=True
 
-            # SECURITY TRADE-OFF (temporary — see login view note for why).
-            # We return the rotated refresh in the JSON body so the
-            # cross-origin FE can store the new value in localStorage and
-            # use it on the next refresh. When the platform has a single
-            # parent domain, drop the 'refresh' field and rely on the
-            # HttpOnly cookie alone.
             api_response = Response({
                 'success': True,
                 'access': str(access),
-                'refresh': str(rotated_refresh) if rotated_refresh else None,
             })
             _set_auth_cookies(api_response, access, rotated_refresh)
             return api_response

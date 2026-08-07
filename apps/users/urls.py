@@ -14,6 +14,7 @@ urlpatterns = [
     # AUTHENTICATION
     # =========================================================================
     path('register/', views.RegisterView.as_view(), name='register'),
+    path('csrf/', views.CsrfTokenView.as_view(), name='csrf-token'),
     path('login/', views.LoginView.as_view(), name='login'),
     path('logout/', views.LogoutView.as_view(), name='logout'),
     path('token/refresh/', views.CustomTokenRefreshView.as_view(), name='token-refresh'),

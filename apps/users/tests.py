@@ -258,10 +258,7 @@ class TestAuthenticationAPI:
 
         assert response.status_code == status.HTTP_200_OK
         assert 'access' in response.data['data']
-        # Refresh token returned in BOTH the body (FE localStorage fallback
-        # for cross-origin deploys) and the HttpOnly cookie. See login view
-        # comment for the security trade-off (P0 #1, temporary).
-        assert 'refresh' in response.data['data']
+        assert 'refresh' not in response.data['data']
         assert response.cookies.get('refresh_token') is not None
 
     def test_login_with_invalid_credentials_fails(self, api_client, eagle_user):

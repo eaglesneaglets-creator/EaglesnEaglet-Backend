@@ -198,7 +198,11 @@ class DonationService:
             raise ValidationError({"callback": "Missing payment reference."})
 
         try:
-            donation = Donation.objects.select_related("campaign").get(hubtel_reference=reference)
+            donation = (
+                Donation.objects.select_for_update()
+                .select_related("campaign")
+                .get(hubtel_reference=reference)
+            )
         except Donation.DoesNotExist:
             logger.error("Hubtel callback for unknown reference: %s", reference)
             raise NotFound("Donation not found.")
@@ -272,6 +276,15 @@ class DonationService:
 
         # Update status in database
         donation = Donation.objects.select_for_update().get(id=donation_id)
+
+        # Another callback/status check may have completed while the provider
+        # request was in flight. Re-check after acquiring the row lock so the
+        # campaign total is incremented exactly once.
+        if donation.status in (Donation.Status.SUCCESS, Donation.Status.FAILED):
+            return {
+                "status": donation.status,
+                "donation_id": str(donation.id),
+            }
 
         if hubtel_status == "paid":
             donation.status = Donation.Status.SUCCESS

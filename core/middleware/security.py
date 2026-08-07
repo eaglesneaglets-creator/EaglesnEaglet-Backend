@@ -5,7 +5,7 @@ Adds security headers and performs security checks on all requests.
 """
 
 import logging
-from django.http import HttpResponseForbidden, JsonResponse
+from django.http import JsonResponse
 import re
 
 from core.middleware.request_noise import is_non_platform_path
@@ -114,10 +114,12 @@ class RateLimitByIPMiddleware:
                     f'Rate limit exceeded for IP {ip} on {path}',
                     extra={'ip': ip, 'path': path, 'count': request_count}
                 )
-                return HttpResponseForbidden(
-                    '{"error": {"code": 429, "message": "Too many requests. Please try again later."}}',
-                    content_type='application/json'
+                response = JsonResponse(
+                    {"error": {"code": 429, "message": "Too many requests. Please try again later."}},
+                    status=429,
                 )
+                response["Retry-After"] = "60"
+                return response
 
             # Increment counter with 60 second expiry
             cache.set(cache_key, request_count + 1, 60)

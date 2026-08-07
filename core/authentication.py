@@ -8,6 +8,7 @@ API clients (mobile apps, Postman, curl) continue to work unchanged.
 Used as the primary DEFAULT_AUTHENTICATION_CLASS in settings/base.py.
 """
 
+from django.middleware.csrf import CsrfViewMiddleware
 from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
@@ -25,6 +26,20 @@ class AccountSuspended(PermissionDenied):
 
     default_detail = "Your account has been suspended."
     default_code = "account_suspended"
+
+
+class CsrfFailed(PermissionDenied):
+    default_detail = "CSRF validation failed."
+    default_code = "csrf_failed"
+
+
+def enforce_csrf(request) -> None:
+    """Apply Django's CSRF validation to cookie-authenticated API requests."""
+    check = CsrfViewMiddleware(lambda _request: None)
+    check.process_request(request)
+    reason = check.process_view(request, None, (), {})
+    if reason:
+        raise CsrfFailed(f"CSRF validation failed: {reason}")
 
 
 class CookieJWTAuthentication(JWTAuthentication):
@@ -86,10 +101,12 @@ class CookieJWTAuthentication(JWTAuthentication):
         if raw_token is not None:
             try:
                 validated_token = self.get_validated_token(raw_token)
-                return self.get_user(validated_token, request=request), validated_token
-            except AccountSuspended:
-                # Valid token, but the account is suspended — a definitive
-                # denial, NOT a reason to fall through to the header.
+                user = self.get_user(validated_token, request=request)
+                enforce_csrf(request)
+                return user, validated_token
+            except (AccountSuspended, CsrfFailed):
+                # A valid cookie with an account/CSRF denial is definitive,
+                # not a reason to fall through to bearer authentication.
                 raise
             except Exception:
                 # Invalid or expired cookie — fall through to header

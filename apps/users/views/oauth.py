@@ -349,14 +349,11 @@ class GoogleOAuthCallbackView(APIView):
         user.last_login = timezone.now()
         user.save(update_fields=['last_login'])
 
-        # Build response. Refresh token is returned in JSON as a
-        # temporary cross-origin fallback so the FE can stash it in
-        # localStorage — see the login view note (P0 #1) for why. Once
-        # FE + BE share a parent domain, drop the 'refresh' field and
-        # rely on the cookie set by _set_auth_cookies below.
+        # The refresh token is cookie-only. JavaScript receives the short-lived
+        # access token for API/WebSocket compatibility, but never the refresh
+        # credential.
         response_data = {
             'access': str(refresh.access_token),
-            'refresh': str(refresh),
             'user': UserSerializer(user).data,
             'is_new_user': is_new_user,
         }
