@@ -5,7 +5,6 @@ invariant, IsNestMember read-only, and ProgramRulesLocked permission.
 
 import pytest
 from django.contrib.auth import get_user_model
-from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.nests.models import Nest, NestMembership

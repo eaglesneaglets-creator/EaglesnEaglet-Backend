@@ -11,13 +11,11 @@ Coverage:
 - activated_at / archived_at timestamp side-effects on status flips
 """
 
-import uuid
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
-from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 

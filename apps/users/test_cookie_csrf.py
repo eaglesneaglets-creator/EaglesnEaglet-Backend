@@ -73,3 +73,24 @@ def test_cookie_refresh_requires_csrf(user):
     assert denied.status_code == 403
     assert allowed.status_code == 200
     assert "refresh" not in allowed.json()
+
+
+@pytest.mark.django_db
+def test_csrf_failure_message_is_human_readable(user):
+    """The rejection reason must be text, not a leaked Python object repr.
+
+    Django's CsrfViewMiddleware.process_view() returns an HttpResponseForbidden
+    *object* on failure. Interpolating that into the message sent clients
+    `CSRF validation failed: <HttpResponseForbidden status_code=403, "text/html...">`
+    — exposing internals and telling the caller nothing useful.
+    """
+    client = _csrf_client()
+    refresh = RefreshToken.for_user(user)
+    client.cookies["access_token"] = str(refresh.access_token)
+
+    response = client.post("/api/v1/auth/logout/", {}, format="json")
+
+    message = response.json()["error"]["message"]
+    assert response.status_code == 403
+    assert "HttpResponse" not in message and "<" not in message, message
+    assert "CSRF" in message

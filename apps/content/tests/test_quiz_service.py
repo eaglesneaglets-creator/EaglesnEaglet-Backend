@@ -90,7 +90,7 @@ class TestPassingAttemptTriggersModuleCompletion:
         self, eaglet_user, quiz_with_mcq_question, nest_membership
     ):
         quiz, question = quiz_with_mcq_question
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
         with patch("apps.content.services.ProgressService.check_resource_gate", return_value=True), \
              patch("apps.content.services.ProgressService.check_module_completion") as mock_completion:
             ModuleQuizService.submit_attempt(

@@ -11,7 +11,6 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from apps.content.models import Assignment
 from apps.nests.models import Nest, NestMembership
 from apps.nests.models_program import Program, ProgramEnrollment
 from apps.nests.permissions import HasActiveProgram, NoActiveProgramDenied
