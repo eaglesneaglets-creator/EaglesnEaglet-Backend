@@ -96,10 +96,28 @@ def test_platform_paths_not_probe_flood_limited():
         assert response.status_code == 200
 
 
-def test_request_logging_middleware_skips_scanner_404_logs(caplog):
+@pytest.fixture
+def apps_log(caplog):
+    """`caplog`, wired so it can actually see the 'apps' logger.
+
+    settings LOGGING configures 'apps' with ``propagate: False``. caplog listens
+    on the ROOT logger, so by default it never receives these records: a positive
+    assertion always fails and — worse — a negative one always passes, proving
+    nothing. Attaching caplog's handler to the logger itself fixes both.
+    """
     import logging
 
+    logger = logging.getLogger('apps')
+    logger.addHandler(caplog.handler)
     caplog.set_level(logging.INFO, logger='apps')
+    try:
+        yield caplog
+    finally:
+        logger.removeHandler(caplog.handler)
+
+
+def test_request_logging_middleware_skips_scanner_404_logs(apps_log):
+    caplog = apps_log
     middleware = RequestLoggingMiddleware(lambda request: _not_found_response())
     factory = RequestFactory()
 
@@ -112,10 +130,8 @@ def test_request_logging_middleware_skips_scanner_404_logs(caplog):
     assert 'Request not found' not in caplog.text
 
 
-def test_request_logging_middleware_logs_api_404_at_info(caplog):
-    import logging
-
-    caplog.set_level(logging.INFO, logger='apps')
+def test_request_logging_middleware_logs_api_404_at_info(apps_log):
+    caplog = apps_log
     middleware = RequestLoggingMiddleware(lambda request: _not_found_response())
     factory = RequestFactory()
 
