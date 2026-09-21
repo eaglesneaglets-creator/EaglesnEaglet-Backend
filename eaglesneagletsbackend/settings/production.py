@@ -16,6 +16,17 @@ from sentry_sdk.integrations.celery import CeleryIntegration
 # SECURITY: Must be set via environment variable
 SECRET_KEY = config('SECRET_KEY')
 
+# SECURITY: field-level encryption for KYC national IDs. Fail closed, like
+# SECRET_KEY above. base.py defaults this to '' and EncryptedCharField treats an
+# empty key as "store plaintext" (correct for local dev) — so without this check
+# a production deploy missing the variable boots normally and writes national IDs
+# unencrypted, with a log warning as the only symptom. That happened.
+#
+# After first setting the key, run once:  python manage.py reencrypt_national_ids
+# NEVER change or lose the key: data already encrypted with it is unrecoverable.
+from core.fields import require_encryption_key  # noqa: E402
+ENCRYPTION_KEY = require_encryption_key(config('ENCRYPTION_KEY', default=''))
+
 DEBUG = False
 
 _allowed_hosts = config('ALLOWED_HOSTS', cast=Csv(), default='')
