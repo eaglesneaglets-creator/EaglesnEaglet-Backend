@@ -10,7 +10,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.nests.models import Nest
-from apps.nests.models_program import Program, ProgramEnrollment
+from apps.nests.models_program import Program
 from apps.nests.services import EnrollmentService
 
 User = get_user_model()

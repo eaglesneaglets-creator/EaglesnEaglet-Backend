@@ -111,7 +111,6 @@ class TestCancelOrder:
 import uuid as _uuid
 from decimal import Decimal as _Decimal
 from unittest.mock import patch as _patch
-from django.test import override_settings as _override_settings
 from apps.store.models import Order as _Order
 
 

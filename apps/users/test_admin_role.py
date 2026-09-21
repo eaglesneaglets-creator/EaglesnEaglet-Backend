@@ -12,7 +12,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.users.models import MentorKYC
-from apps.users.models_admin import AdminInvite, AdminRoleAudit, AdminRoleRequest
+from apps.users.models_admin import AdminRoleAudit, AdminRoleRequest
 from apps.users.services import admin_role as svc
 
 pytestmark = pytest.mark.django_db

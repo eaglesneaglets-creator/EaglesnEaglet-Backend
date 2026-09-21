@@ -1,7 +1,7 @@
 """Tests for notification Celery tasks."""
 import smtplib
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from apps.users.models import User
 

@@ -73,7 +73,6 @@ def test_postlike_unique_per_user_per_post(db, post, eaglet):
         NestPostLike.objects.create(post=post, user=eaglet)
 
 
-from django.db.models import Prefetch
 from rest_framework.exceptions import ValidationError
 from apps.nests.services import CommunityService
 

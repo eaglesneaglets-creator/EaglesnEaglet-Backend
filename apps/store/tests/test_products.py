@@ -32,7 +32,13 @@ def eaglet(db):
 
 @pytest.fixture
 def category(db):
-    return Category.objects.create(name="Merchandise", slug="merchandise")
+    # Migration 0003_seed_categories already inserts "Merchandise" into every
+    # database — including the test one — so a blind create() violates the
+    # unique constraint on Category.name. Reuse the seeded row instead.
+    category, _ = Category.objects.get_or_create(
+        name="Merchandise", defaults={"slug": "merchandise"}
+    )
+    return category
 
 
 @pytest.fixture

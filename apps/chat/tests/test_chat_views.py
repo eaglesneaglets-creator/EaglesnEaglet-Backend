@@ -4,7 +4,7 @@ from rest_framework.test import APIClient
 
 from apps.users.models import User
 from apps.nests.models import Nest, NestMembership
-from apps.chat.models import Conversation, Message
+from apps.chat.models import Conversation
 from apps.chat.services import ChatService
 
 

@@ -4,7 +4,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.users.models import User
 from apps.nests.models import Nest, NestMembership
-from apps.chat.models import Conversation, Message, MessageRead
+from apps.chat.models import MessageRead
 from apps.chat.services import ChatService
 
 

@@ -203,14 +203,18 @@ class TestHubtelSMSClient:
         assert "sms.hubtel.com/v1/messages/send" in call_url
 
     @patch("apps.donations.hubtel.requests.post")
-    def test_send_sms_uses_correct_payload_fields(self, mock_post):
+    def test_send_sms_uses_correct_payload_fields(self, mock_post, settings):
+        # The sender ID is deployment config (HUBTEL_SMS_SENDER_ID in .env), so
+        # pin it here. Asserting a bare literal made this test pass or fail
+        # depending on whose machine ran it.
+        settings.HUBTEL_SMS_SENDER_ID = "TestSender"
         mock_post.return_value = MagicMock(
             status_code=201,
             json=lambda: {"status": 0, "messageId": "abc-123"},
         )
         HubtelSMSClient.send_sms(to="233241234567", content="Test OTP")
         payload = mock_post.call_args[1]["json"]
-        assert payload["From"] == "EaglesNest"
+        assert payload["From"] == "TestSender"
         assert payload["To"] == "233241234567"
         assert payload["Content"] == "Test OTP"
 

@@ -33,9 +33,23 @@ class CsrfFailed(PermissionDenied):
     default_code = "csrf_failed"
 
 
+class _CsrfCheck(CsrfViewMiddleware):
+    """CsrfViewMiddleware that reports *why* it rejected, as plain text.
+
+    The stock middleware's ``_reject`` builds an ``HttpResponseForbidden``.
+    ``process_view`` returns that object, so interpolating the result into an
+    error message leaked its repr to API clients
+    (``<HttpResponseForbidden status_code=403, "text/html...">``). Returning the
+    reason string instead is the same approach DRF's SessionAuthentication takes.
+    """
+
+    def _reject(self, request, reason: str) -> str:
+        return reason
+
+
 def enforce_csrf(request) -> None:
     """Apply Django's CSRF validation to cookie-authenticated API requests."""
-    check = CsrfViewMiddleware(lambda _request: None)
+    check = _CsrfCheck(lambda _request: None)
     check.process_request(request)
     reason = check.process_view(request, None, (), {})
     if reason:
