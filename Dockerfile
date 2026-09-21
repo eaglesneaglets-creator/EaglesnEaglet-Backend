@@ -110,7 +110,17 @@ RUN mkdir -p /app/staticfiles /app/media /app/logs && \
 USER appuser
 
 # Collect static files (CSS, JS, images)
-RUN SECRET_KEY=build-only-dummy-key CLOUDINARY_API_KEY= python manage.py collectstatic --noinput --settings=eaglesneagletsbackend.settings.production
+#
+# collectstatic imports the production settings, which fail closed on missing
+# secrets. The platform's service variables (Railway etc.) exist only at RUNTIME —
+# they are NOT visible inside a Dockerfile RUN — so build-only stand-ins are
+# supplied inline here. They are scoped to this one command: never an ENV, never
+# stored in the image, and never used to sign or encrypt anything.
+#
+# ENCRYPTION_KEY must be a syntactically VALID Fernet key (the settings guard
+# rejects malformed ones), so a throwaway is generated per build rather than
+# hardcoding a secret-looking literal. The real key is injected at runtime.
+RUN SECRET_KEY=build-only-dummy-key     ENCRYPTION_KEY="$(python -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"     CLOUDINARY_API_KEY=     python manage.py collectstatic --noinput --settings=eaglesneagletsbackend.settings.production
 
 # Expose port 8000
 EXPOSE 8000
