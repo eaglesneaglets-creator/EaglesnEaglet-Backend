@@ -186,9 +186,9 @@ class ContentService:
                 # Auto-generate thumbnail if not manually provided
                 if not thumbnail and public_id:
                     if content_type == 'video':
-                        data['thumbnail_url'] = get_video_thumbnail(public_id)
+                        data['thumbnail_url'] = get_video_thumbnail(public_id) or data.get('thumbnail_url') or ''
                     elif content_type == 'document' and str(file).lower().endswith('.pdf'):
-                        data['thumbnail_url'] = get_pdf_thumbnail(public_id)
+                        data['thumbnail_url'] = get_pdf_thumbnail(public_id) or data.get('thumbnail_url') or ''
             except Exception as e:
                 logger.error(f"Failed to upload file to Cloudinary: {e}")
                 raise ValidationError({"file": "Failed to upload file. Please try again."})
@@ -238,9 +238,9 @@ class ContentService:
                 # Auto-generate thumbnail if not manually provided and file changed
                 if not thumbnail and public_id:
                     if content_type == 'video':
-                        data['thumbnail_url'] = get_video_thumbnail(public_id)
+                        data['thumbnail_url'] = get_video_thumbnail(public_id) or data.get('thumbnail_url') or ''
                     elif content_type == 'document' and str(file).lower().endswith('.pdf'):
-                        data['thumbnail_url'] = get_pdf_thumbnail(public_id)
+                        data['thumbnail_url'] = get_pdf_thumbnail(public_id) or data.get('thumbnail_url') or ''
             except Exception as e:
                 logger.error(f"Failed to upload file to Cloudinary: {e}")
                 raise ValidationError({"file": "Failed to upload file. Please try again."})

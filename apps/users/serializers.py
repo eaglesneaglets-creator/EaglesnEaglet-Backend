@@ -19,6 +19,40 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, UserProfile, MentorKYC, EagletProfile, MenteeKYC, LoginHistory, MentorAvailability
+from core.private_docs import signed_document_url
+
+#: KYC fields that hold identity documents (stored as private references).
+PRIVATE_DOCUMENT_FIELDS = ('government_id', 'recommendation_letter', 'cv')
+
+
+class PrivateDocumentFieldsMixin:
+    """Serve KYC documents as short-lived signed URLs, never writable by clients.
+
+    * Read: the stored private reference becomes an expiring download URL.
+    * Write: these fields are forced read-only. Documents only arrive through
+      the dedicated upload endpoints; otherwise a client could store another
+      user's private reference (or an arbitrary URL) on their own record and
+      have the API mint a signed link for it.
+    """
+
+    def get_fields(self):
+        fields = super().get_fields()
+        for name in PRIVATE_DOCUMENT_FIELDS:
+            field = fields.get(name)
+            if field is not None and not field.read_only:
+                field.read_only = True
+                field.required = False
+        return fields
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for name in PRIVATE_DOCUMENT_FIELDS:
+            if name in data:
+                raw = getattr(instance, name, None)
+                raw = getattr(raw, 'name', raw)  # FileField → stored string
+                data[name] = signed_document_url(raw)
+        return data
+
 from .constants import (
     EXPERTISE_CHOICES, MENTORSHIP_INTEREST_CHOICES,
     EDUCATIONAL_LEVEL_CHOICES, MENTORSHIP_GOAL_CHOICES, AGE_GROUP_CHOICES,
@@ -415,7 +449,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 # MENTOR KYC SERIALIZERS
 # =============================================================================
 
-class MentorKYCSerializer(serializers.ModelSerializer):
+class MentorKYCSerializer(PrivateDocumentFieldsMixin, serializers.ModelSerializer):
     """
     Full KYC serializer for reading and updating KYC data.
     """
@@ -608,7 +642,7 @@ class MentorKYCStep4Serializer(serializers.Serializer):
         return kyc
 
 
-class MentorKYCAdminSerializer(serializers.ModelSerializer):
+class MentorKYCAdminSerializer(PrivateDocumentFieldsMixin, serializers.ModelSerializer):
     """
     Serializer for admin to review and update KYC applications.
     """
@@ -691,7 +725,7 @@ class MentorKYCListSerializer(serializers.ModelSerializer):
         return 'low'
 
 
-class MentorKYCDetailSerializer(serializers.ModelSerializer):
+class MentorKYCDetailSerializer(PrivateDocumentFieldsMixin, serializers.ModelSerializer):
     """
     Detailed serializer for admin to review a single KYC application.
     """
@@ -773,7 +807,7 @@ class MentorKYCDetailSerializer(serializers.ModelSerializer):
         return None
 
     def get_cv_url(self, obj):
-        return obj.cv or None
+        return signed_document_url(obj.cv)
 
 
 class KYCApprovalSerializer(serializers.Serializer):
@@ -962,7 +996,7 @@ class EagletCompleteOnboardingSerializer(serializers.Serializer):
 # MENTEE KYC SERIALIZERS (NEW - Admin Approval Required)
 # =============================================================================
 
-class MenteeKYCSerializer(serializers.ModelSerializer):
+class MenteeKYCSerializer(PrivateDocumentFieldsMixin, serializers.ModelSerializer):
     """
     Full KYC serializer for reading and updating Mentee KYC data.
     """
@@ -1103,7 +1137,7 @@ class MenteeKYCListSerializer(serializers.ModelSerializer):
         return 'low'
 
 
-class MenteeKYCDetailSerializer(serializers.ModelSerializer):
+class MenteeKYCDetailSerializer(PrivateDocumentFieldsMixin, serializers.ModelSerializer):
     """
     Detailed serializer for admin to review a single Mentee KYC application.
     """
@@ -1169,7 +1203,7 @@ class MenteeKYCDetailSerializer(serializers.ModelSerializer):
 # NEW MENTOR KYC SERIALIZERS (Updated with PM requirements)
 # =============================================================================
 
-class MentorKYCNewSerializer(serializers.ModelSerializer):
+class MentorKYCNewSerializer(PrivateDocumentFieldsMixin, serializers.ModelSerializer):
     """
     NEW KYC serializer for reading and updating Mentor KYC data (PM requirements).
     """

@@ -9,7 +9,7 @@ from django.http import JsonResponse
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from core.views import cloudinary_sign_view, enums_view
+from core.views import cloudinary_sign_view, enums_view, media_redirect_view
 
 
 def health_check(request):
@@ -66,6 +66,9 @@ api_v1_patterns = [
     # Frontend uploads files straight to Cloudinary using the params
     # returned here; BE never touches the file bytes.
     path('uploads/sign/', cloudinary_sign_view, name='cloudinary-sign'),
+
+    # Stable public media URL -> short-lived signed bucket URL.
+    path('media/<path:path>', media_redirect_view, name='media-redirect'),
 
     # Authentication
     path('auth/', include('apps.users.urls')),

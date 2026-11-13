@@ -33,19 +33,40 @@ class SecurityHeadersMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
+    @staticmethod
+    def _origin(url: str) -> str:
+        from urllib.parse import urlsplit
+        p = urlsplit(url)
+        return f'{p.scheme}://{p.netloc}'
+
+    @staticmethod
+    def _bucket_wildcard(url: str) -> str:
+        """``https://*.host`` — virtual-hosted buckets live on a subdomain."""
+        from urllib.parse import urlsplit
+        p = urlsplit(url)
+        return f'{p.scheme}://*.{p.hostname}' + (f':{p.port}' if p.port else '')
+
     def __call__(self, request):
         response = self.get_response(request)
 
         # Content Security Policy
+        # Browser talks to the media bucket directly (signed uploads, redirected
+        # downloads, PDF/video embeds), so its origin must be allow-listed.
+        from django.conf import settings as _settings
+        _os_cfg = getattr(_settings, 'OBJECT_STORAGE', None) or {}
+        _bucket_origins = ' '.join(sorted({
+            self._origin(u) for u in (_os_cfg.get('ENDPOINT'), _os_cfg.get('PUBLIC_ENDPOINT')) if u
+        } | ({self._bucket_wildcard(_os_cfg.get('ENDPOINT'))} if _os_cfg.get('ENDPOINT') else set())))
+        _b = f' {_bucket_origins}' if _bucket_origins else ''
         csp_directives = [
             "default-src 'self'",
             "script-src 'self'",                                    # removed 'unsafe-inline' — XSS protection
             "style-src 'self' 'unsafe-inline'",                     # kept for Django admin CSS
             "img-src 'self' data: https:",
             "font-src 'self' https://fonts.gstatic.com",
-            "connect-src 'self' https://*.cloudinary.com wss://*.up.railway.app",  # added wss for WebSocket
-            "media-src 'self' https://res.cloudinary.com",          # video/audio from Cloudinary
-            "frame-src 'self' https://*.cloudinary.com",
+            f"connect-src 'self' https://*.cloudinary.com wss://*.up.railway.app{_b}",  # added wss for WebSocket
+            f"media-src 'self' https://res.cloudinary.com{_b}",     # video/audio from Cloudinary / bucket
+            f"frame-src 'self' https://*.cloudinary.com{_b}",
             "frame-ancestors 'none'",                               # tightened: prevent clickjacking
             "base-uri 'self'",
             "form-action 'self'",

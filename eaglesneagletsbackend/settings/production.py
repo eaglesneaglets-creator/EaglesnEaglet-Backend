@@ -24,7 +24,11 @@ SECRET_KEY = config('SECRET_KEY')
 #
 # After first setting the key, run once:  python manage.py reencrypt_national_ids
 # NEVER change or lose the key: data already encrypted with it is unrecoverable.
-from core.fields import require_encryption_key  # noqa: E402
+# core.crypto is deliberately free of django.conf/django.db imports — importing
+# core.fields here would pull the ORM in during settings load.
+# Every process using these settings (web, celery worker, celery beat, one-off
+# manage.py commands, CI checks) must receive ENCRYPTION_KEY.
+from core.crypto import require_encryption_key  # noqa: E402
 ENCRYPTION_KEY = require_encryption_key(config('ENCRYPTION_KEY', default=''))
 
 DEBUG = False
@@ -235,48 +239,38 @@ SERVER_EMAIL = config('SERVER_EMAIL', default='errors@eaglesneaglets.com')
 
 
 # =============================================================================
-# STATIC & MEDIA FILES - AWS S3 or Cloudinary Fallback
+# STATIC & MEDIA FILES
 # =============================================================================
-AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID', default=None)
-AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY', default=None)
-AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME', default=None)
-AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='us-east-1')
-AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com'
-AWS_S3_OBJECT_PARAMETERS = {
-    'CacheControl': 'max-age=86400',
-}
-AWS_DEFAULT_ACL = None
-AWS_S3_FILE_OVERWRITE = False
-
+# Static files are ALWAYS served by WhiteNoise from the image (base.py).
+#
+# Media (user uploads) is handled by core.storage / core.object_storage, NOT
+# Django's STORAGES: Cloudinary today, the Railway S3 bucket once
+# MEDIA_STORAGE=bucket (see OBJECT_STORAGE in base.py).
+#
+# There used to be an "if AWS_ACCESS_KEY_ID:" branch here that moved static AND
+# media to Amazon S3. Railway injects AWS_ACCESS_KEY_ID when a Storage Bucket is
+# connected, which silently activated that branch: static URLs became
+# https://None.s3.amazonaws.com/... and the Cloudinary branch below was
+# skipped. It was removed on purpose; do not reintroduce it.
 CLOUDINARY_API_KEY = config('CLOUDINARY_API_KEY', default='')
 
-if AWS_ACCESS_KEY_ID:
-    # Use S3 for static and media in production (Django 5.2+ STORAGES dict)
-    STORAGES = {
-        "default": {
-            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
-        },
-        "staticfiles": {
-            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
-        },
-    }
-    STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/static/'
-    MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
-elif CLOUDINARY_API_KEY:
-    import cloudinary
-    
+if CLOUDINARY_API_KEY:
     CLOUDINARY_STORAGE = {
         'CLOUD_NAME': config('CLOUDINARY_CLOUD_NAME', default=''),
         'API_KEY': CLOUDINARY_API_KEY,
         'API_SECRET': config('CLOUDINARY_API_SECRET', default=''),
     }
 
-    cloudinary.config(
-        cloud_name=config('CLOUDINARY_CLOUD_NAME', default=''),
-        api_key=CLOUDINARY_API_KEY,
-        api_secret=config('CLOUDINARY_API_SECRET', default=''),
-        secure=True,
-    )
+    # The Cloudinary SDK reads this dict from Django settings on first use.
+    # Do NOT `import cloudinary` here: the SDK reads Django settings while it
+    # is being imported, so importing it from inside the settings module is a
+    # circular import (fails depending on import order).
+    CLOUDINARY = {
+        'cloud_name': config('CLOUDINARY_CLOUD_NAME', default=''),
+        'api_key': CLOUDINARY_API_KEY,
+        'api_secret': config('CLOUDINARY_API_SECRET', default=''),
+        'secure': True,
+    }
 
     CLOUDINARY_OPTIMIZATION = {
         'fetch_format': 'auto',
