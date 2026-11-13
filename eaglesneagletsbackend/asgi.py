@@ -9,7 +9,12 @@ import os
 import django
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'eaglesneagletsbackend.settings.local')
+# Use the settings package (selects local/production/test from DJANGO_ENV), the
+# same default as wsgi.py, manage.py and celery.py. Defaulting to `.local` here
+# meant the production image (DJANGO_ENV=production, served by daphne via
+# start.sh) would run with DEBUG/dev settings whenever DJANGO_SETTINGS_MODULE
+# was not explicitly set on the host.
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'eaglesneagletsbackend.settings')
 
 # Django must be fully initialized before importing anything that touches
 # models, settings, or apps (including channels routing modules).

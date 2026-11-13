@@ -133,7 +133,7 @@ def test_add_reply_prevents_nested_threading(db, top_comment, eagle, eaglet):
     """add_reply raises ValidationError when target is itself a reply."""
     reply = CommunityService.add_reply(str(top_comment.id), eagle, "First reply")
     with pytest.raises(ValidationError):
-        CommunityService.add_reply(str(reply.id), eaglet, "Should not work")
+        CommunityService.add_reply(str(reply.id), eagle, "Should not work")
 
 
 from rest_framework.test import APIClient
@@ -233,3 +233,49 @@ def test_list_posts_returns_liked_by_me(db, api_client, nest, eagle, member, pos
     by_id = {item["id"]: item["liked_by_me"] for item in r.data["data"]}
     assert by_id[str(post.id)] is True
     assert by_id[str(other.id)] is False
+
+
+# ── Cross-nest isolation (IDOR) ────────────────────────────────────────────
+# IsNestMember authorises the {nest_pk} in the URL. The post/comment ids must
+# therefore be resolved INSIDE that nest, or a member of nest A could read and
+# act on nest B's posts simply by swapping ids.
+
+
+@pytest.fixture
+def other_nest_post(db):
+    other_eagle = User.objects.create_user(
+        email="other-eagle@test.com", password="pass",
+        role=User.Role.EAGLE, first_name="Other", last_name="Eagle",
+    )
+    other_nest = Nest.objects.create(name="Other Nest", eagle=other_eagle)
+    post = NestPost.objects.create(nest=other_nest, author=other_eagle, content="Private")
+    comment = NestPostComment.objects.create(post=post, author=other_eagle, content="Secret comment")
+    return post, comment
+
+
+def test_cannot_read_comments_of_another_nests_post(db, api_client, nest, member, other_nest_post):
+    post, _ = other_nest_post
+    api_client.force_authenticate(user=member)
+    r = api_client.get(f"/api/v1/nests/{nest.id}/posts/{post.id}/comment-list/")
+    assert r.status_code == 200
+    assert r.data == []
+
+
+def test_cannot_like_another_nests_post(db, api_client, nest, member, other_nest_post):
+    post, _ = other_nest_post
+    api_client.force_authenticate(user=member)
+    r = api_client.post(f"/api/v1/nests/{nest.id}/posts/{post.id}/like/")
+    assert r.status_code == 404
+    post.refresh_from_db()
+    assert post.likes_count == 0
+
+
+def test_cannot_reply_in_another_nest(db, api_client, nest, member, other_nest_post):
+    post, comment = other_nest_post
+    api_client.force_authenticate(user=member)
+    r = api_client.post(
+        f"/api/v1/nests/{nest.id}/posts/{post.id}/comments/{comment.id}/replies/",
+        {"content": "sneaky"}, format="json",
+    )
+    assert r.status_code == 404
+    assert not NestPostComment.objects.filter(parent=comment).exists()

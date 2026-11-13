@@ -455,7 +455,11 @@ class VerifyPaymentView(APIView):
 
         if pay_status == "success":
             txn_id = str(result.get("id", "")) if isinstance(result, dict) else str(getattr(result, "id", ""))
-            order = StoreService.mark_order_paid(order.paystack_reference, txn_id)
+            order = StoreService.mark_order_paid(
+                order.paystack_reference, txn_id,
+                amount_minor=result.get("amount"),
+                currency=result.get("currency"),
+            )
 
         order = Order.objects.prefetch_related(
             "items", "items__product", "items__product__images"
@@ -505,7 +509,11 @@ class PaystackWebhookView(APIView):
             ref = event_data.get("reference", "")
             txn_id = str(event_data.get("id", ""))
             if ref:
-                process_successful_payment.delay(ref, txn_id)
+                process_successful_payment.delay(
+                    ref, txn_id,
+                    amount=event_data.get("amount"),
+                    currency=event_data.get("currency"),
+                )
                 logger.info("Dispatched process_successful_payment for ref=%s", ref)
 
         # Always return 200 to Paystack — including for unhandled event types.

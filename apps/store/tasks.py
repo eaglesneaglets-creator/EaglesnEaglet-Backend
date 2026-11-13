@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def process_successful_payment(self, reference: str, transaction_id: str):
+def process_successful_payment(self, reference: str, transaction_id: str, amount=None, currency=None):
     """
     Process a confirmed Paystack payment.
 
@@ -33,7 +33,7 @@ def process_successful_payment(self, reference: str, transaction_id: str):
     """
     try:
         from .services import StoreService  # lazy import — see module docstring
-        StoreService.mark_order_paid(reference, transaction_id)
+        StoreService.mark_order_paid(reference, transaction_id, amount_minor=amount, currency=currency)
     except Exception as exc:
         logger.exception(
             "process_successful_payment failed for reference=%s transaction_id=%s",

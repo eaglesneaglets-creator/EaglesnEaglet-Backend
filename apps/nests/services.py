@@ -347,9 +347,17 @@ class CommunityService:
         return comment
 
     @staticmethod
-    def toggle_like(post_id: str, user) -> dict:
-        """Toggle a like on a post. Returns liked status and the authoritative count."""
-        post = get_object_or_404(NestPost, id=post_id)
+    def toggle_like(post_id: str, user, nest_id=None) -> dict:
+        """Toggle a like on a post. Returns liked status and the authoritative count.
+
+        ``nest_id`` scopes the lookup to the nest the caller's membership was
+        checked against — without it a member of one nest could act on another
+        nest's posts by id.
+        """
+        lookup = {"id": post_id}
+        if nest_id is not None:
+            lookup["nest_id"] = nest_id
+        post = get_object_or_404(NestPost, **lookup)
         like, created = NestPostLike.objects.get_or_create(post=post, user=user)
         if not created:
             like.delete()
@@ -362,10 +370,13 @@ class CommunityService:
         return {"liked": liked, "likes_count": post.likes_count}
 
     @staticmethod
-    def get_comments(post_id: str):
+    def get_comments(post_id: str, nest_id=None):
         """Return top-level comments (parent=None) with replies prefetched."""
+        qs = NestPostComment.objects.filter(post_id=post_id, parent=None)
+        if nest_id is not None:
+            qs = qs.filter(post__nest_id=nest_id)
         return (
-            NestPostComment.objects.filter(post_id=post_id, parent=None)
+            qs
             .select_related("author")
             .prefetch_related(
                 Prefetch(
@@ -379,9 +390,18 @@ class CommunityService:
         )
 
     @staticmethod
-    def add_reply(comment_id: str, author, content: str) -> NestPostComment:
+    def add_reply(
+        comment_id: str, author, content: str, nest_id=None, post_id=None,
+    ) -> NestPostComment:
         """Add a reply to a top-level comment. Raises ValidationError if target is a reply."""
-        parent = get_object_or_404(NestPostComment, id=comment_id)
+        lookup = {"id": comment_id}
+        if nest_id is not None:
+            lookup["post__nest_id"] = nest_id
+        if post_id is not None:
+            lookup["post_id"] = post_id
+        parent = get_object_or_404(NestPostComment.objects.select_related("post"), **lookup)
+        if not _can_participate_in_nest(author, parent.post.nest_id):
+            raise PermissionDenied("You must be an active member to reply.")
         if parent.parent_id is not None:
             raise ValidationError(
                 "Cannot reply to a reply. Only one level of threading is allowed."

@@ -178,21 +178,21 @@ class HubtelPaymentCallbackView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        # Hubtel doesn't ship a webhook signature (confirmed with provider).
-        # The endpoint accepts callbacks without HMAC verification — risk
-        # mitigations layered elsewhere:
-        #   * `Donation.hubtel_reference` is the join key; only references
-        #     we issued via /donations/initiate/ will match a row, so a
-        #     forged callback for an unknown reference becomes a no-op.
-        #   * DonationService.process_callback is idempotent (status
-        #     transitions go pending → success/failed, not in reverse).
-        # If Hubtel later publishes a signing key, plug it into
-        # settings.HUBTEL_WEBHOOK_SECRET and the validation path activates.
+        # Hubtel doesn't ship a webhook signature (confirmed with provider), so
+        # an unsigned callback is UNTRUSTED: anyone can POST here, and a donor
+        # knows the reference of the donation they just initiated. Its claimed
+        # status is therefore ignored — the callback only triggers a
+        # server-to-server status check against Hubtel, and that answer is what
+        # moves the donation to SUCCESS/FAILED.
+        # If Hubtel later publishes a signing key, set
+        # settings.HUBTEL_WEBHOOK_SECRET: signed callbacks are then applied
+        # directly without the extra provider round-trip.
         from django.conf import settings as _s
-        secret = getattr(_s, "HUBTEL_WEBHOOK_SECRET", None)
+        secret = getattr(_s, "HUBTEL_WEBHOOK_SECRET", "") or ""
 
+        signed = False
         if secret:
-            if not self._validate_signature(request):
+            if not self._validate_signature(request, secret):
                 logger.warning(
                     "Invalid Hubtel webhook signature from IP: %s",
                     self._get_client_ip(request),
@@ -201,14 +201,17 @@ class HubtelPaymentCallbackView(APIView):
                     {"status": "signature_invalid"},
                     status=status.HTTP_401_UNAUTHORIZED,
                 )
-        else:
-            logger.debug(
-                "Hubtel callback accepted without signature (HUBTEL_WEBHOOK_SECRET unset). "
-                "Provider does not currently issue signatures; relying on reference-match + idempotency."
-            )
+            signed = True
 
         try:
-            donation = DonationService.process_callback(request.data)
+            donation = DonationService.process_callback(
+                request.data, verify_with_provider=not signed,
+            )
+        except (NotFound, ValidationError) as exc:
+            # Unknown/malformed references are expected noise on a public
+            # endpoint — log one line, no traceback (avoids log flooding).
+            logger.warning("Ignoring Hubtel callback: %s", exc)
+            return Response({"status": "ignored"}, status=status.HTTP_200_OK)
         except Exception as exc:
             logger.exception("Error processing Hubtel callback: %s", exc)
             # Always return 200 to Hubtel to prevent retries on our errors
@@ -224,30 +227,23 @@ class HubtelPaymentCallbackView(APIView):
 
         return Response({"status": "received"}, status=status.HTTP_200_OK)
 
-    def _validate_signature(self, request) -> bool:
+    def _validate_signature(self, request, secret: str) -> bool:
         """
         Validate Hubtel webhook signature.
-        
-        Hubtel sends a signature in the X-Hubtel-Signature header.
-        The signature is HMAC-SHA256 of the request body using the API key.
+
+        Expects an X-Hubtel-Signature header holding the HMAC-SHA256 of the raw
+        request body keyed with HUBTEL_WEBHOOK_SECRET. A missing header is
+        always a failure once a secret is configured.
         """
-        from django.conf import settings
         import hmac
         import hashlib
-        
+
         signature = request.headers.get('X-Hubtel-Signature')
-        if not signature:
-            # If no signature header, fall back to IP whitelist (old integration)
-            # In production, this should be removed and signature should be required
-            if not settings.DEBUG:
-                logger.warning("Hubtel callback without signature header")
-                return False
-            return True
-        
-        # Compute expected signature
-        secret = settings.HUBTEL_API_KEY.encode()
-        body = request.body
-        expected = hmac.new(secret, body, hashlib.sha256).hexdigest()
+        if not signature or not secret:
+            logger.warning("Hubtel callback without signature header")
+            return False
+
+        expected = hmac.new(secret.encode(), request.body, hashlib.sha256).hexdigest()
         
         # Use constant-time comparison to prevent timing attacks
         return hmac.compare_digest(signature.lower(), expected.lower())

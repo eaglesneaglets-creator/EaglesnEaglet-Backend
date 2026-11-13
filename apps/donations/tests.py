@@ -547,6 +547,11 @@ class TestInitiateDonation:
 
 
 class TestHubtelCallback:
+    """Signed callbacks (HUBTEL_WEBHOOK_SECRET configured): payload is applied."""
+
+    @pytest.fixture(autouse=True)
+    def _webhook_secret(self, settings):
+        settings.HUBTEL_WEBHOOK_SECRET = "test-webhook-secret"
 
     @patch("apps.donations.views.HubtelPaymentCallbackView._validate_signature", return_value=True)
     def test_v2_callback_success_marks_donation(self, mock_sig, api_client, pending_donation, campaign):
@@ -602,6 +607,64 @@ class TestHubtelCallback:
             format="json",
         )
         assert response.status_code == 200
+
+
+class TestUnsignedHubtelCallback:
+    """No webhook secret (Hubtel's current reality): the callback body is
+    untrusted. Anyone can POST it — including the donor, who knows their own
+    reference — so the claimed status must be ignored and Hubtel's status API
+    decides the outcome."""
+
+    @pytest.fixture(autouse=True)
+    def _no_secret(self, settings):
+        settings.HUBTEL_WEBHOOK_SECRET = ""
+
+    def _forge_success(self, api_client, donation):
+        return api_client.post(
+            "/api/v1/donations/callback/payment/",
+            {"Status": "Success", "ResponseCode": "0000",
+             "Data": {"ClientReference": donation.hubtel_reference}},
+            format="json",
+        )
+
+    @patch.object(HubtelClient, "check_transaction_status", return_value={"data": {"status": "Unpaid"}})
+    def test_forged_success_is_not_trusted(self, mock_status, api_client, pending_donation, campaign):
+        original_amount = campaign.current_amount
+        self._forge_success(api_client, pending_donation)
+
+        pending_donation.refresh_from_db()
+        campaign.refresh_from_db()
+        mock_status.assert_called_once_with(pending_donation.hubtel_reference)
+        assert pending_donation.status != Donation.Status.SUCCESS
+        assert campaign.current_amount == original_amount
+
+    @patch.object(HubtelClient, "check_transaction_status", return_value={"data": {"status": "Pending"}})
+    def test_forged_success_while_provider_pending_stays_pending(self, mock_status, api_client, pending_donation):
+        self._forge_success(api_client, pending_donation)
+        pending_donation.refresh_from_db()
+        assert pending_donation.status == Donation.Status.PENDING
+
+    @patch.object(HubtelClient, "check_transaction_status", return_value={"data": {"status": "Paid"}})
+    def test_callback_confirmed_by_provider_marks_success(self, mock_status, api_client, pending_donation, campaign):
+        original_amount = campaign.current_amount
+        # Even a body claiming failure resolves to the provider's answer.
+        api_client.post(
+            "/api/v1/donations/callback/payment/",
+            {"Status": "Failed", "Data": {"ClientReference": pending_donation.hubtel_reference}},
+            format="json",
+        )
+        pending_donation.refresh_from_db()
+        campaign.refresh_from_db()
+        assert pending_donation.status == Donation.Status.SUCCESS
+        assert campaign.current_amount == original_amount + pending_donation.amount
+
+    @patch.object(HubtelClient, "check_transaction_status", return_value={"data": {"status": "Paid"}})
+    def test_signature_header_is_required_once_secret_is_set(self, mock_status, api_client, pending_donation, settings):
+        settings.HUBTEL_WEBHOOK_SECRET = "configured-secret"
+        response = self._forge_success(api_client, pending_donation)
+        assert response.status_code == 401
+        pending_donation.refresh_from_db()
+        assert pending_donation.status == Donation.Status.PENDING
 
 
 # ---------------------------------------------------------------------------

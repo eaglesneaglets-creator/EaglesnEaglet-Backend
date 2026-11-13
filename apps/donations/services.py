@@ -174,19 +174,26 @@ class DonationService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    @transaction.atomic
-    def process_callback(callback_data: dict) -> Donation:
+    def process_callback(callback_data: dict, verify_with_provider: bool = True) -> Donation:
         """
         Idempotent handler for Hubtel payment callbacks.
 
         Hubtel posts to our callback URL after the donor approves or
         rejects the mobile money prompt.
 
-        Idempotency: if the donation is already SUCCESS, return early.
+        ``verify_with_provider`` (default True): the callback body is treated as
+        untrusted and its claimed status is IGNORED. The callback only acts as
+        a trigger for a server-to-server status check with Hubtel, which alone
+        decides SUCCESS/FAILED. Pass False only for a callback whose signature
+        has been verified.
+
+        Idempotency: terminal donations are never re-processed.
         """
         # v1 API: reference is top-level ClientReference or ClientState
         # v2 API: reference is in Data.ClientReference (kept for safety)
-        data = callback_data.get("Data", {})
+        data = callback_data.get("Data") or {}
+        if not isinstance(data, dict):
+            data = {}
         reference = (
             callback_data.get("ClientReference")
             or callback_data.get("ClientState")
@@ -194,9 +201,25 @@ class DonationService:
         )
 
         if not reference:
-            logger.warning("Hubtel callback received without reference: %s", callback_data)
+            logger.warning("Hubtel callback received without reference")
             raise ValidationError({"callback": "Missing payment reference."})
 
+        if verify_with_provider:
+            try:
+                donation = Donation.objects.get(hubtel_reference=reference)
+            except Donation.DoesNotExist:
+                logger.error("Hubtel callback for unknown reference: %s", reference)
+                raise NotFound("Donation not found.")
+            DonationService.check_and_update_status(str(donation.id))
+            donation.refresh_from_db()
+            return donation
+
+        return DonationService._apply_trusted_callback(reference, callback_data)
+
+    @staticmethod
+    @transaction.atomic
+    def _apply_trusted_callback(reference: str, callback_data: dict) -> Donation:
+        """Apply a signature-verified callback's status to the donation."""
         try:
             donation = (
                 Donation.objects.select_for_update()
@@ -207,9 +230,9 @@ class DonationService:
             logger.error("Hubtel callback for unknown reference: %s", reference)
             raise NotFound("Donation not found.")
 
-        # Idempotency guard
-        if donation.status == Donation.Status.SUCCESS:
-            logger.info("Duplicate callback for already-successful donation %s", reference)
+        # Idempotency guard: terminal states are final.
+        if donation.status in (Donation.Status.SUCCESS, Donation.Status.FAILED):
+            logger.info("Duplicate callback for already-final donation %s", reference)
             return donation
 
         # v1 API: success indicated by ResponseCode == "0000" or Status == "Success"
