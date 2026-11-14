@@ -12,6 +12,7 @@ from .auth import (
     PasswordResetConfirmView,
     PasswordChangeView,
     CurrentUserView,
+    CompletedToursView,
 )
 from .kyc import (
     MentorKYCView,
@@ -77,6 +78,7 @@ __all__ = [
     "PasswordResetConfirmView",
     "PasswordChangeView",
     "CurrentUserView",
+    "CompletedToursView",
     "MentorKYCView",
     "MentorKYCStepView",
     "MentorKYCSubmitView",

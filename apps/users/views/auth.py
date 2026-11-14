@@ -678,3 +678,38 @@ class CurrentUserView(APIView):
 # =============================================================================
 # MENTOR KYC VIEWS
 # =============================================================================
+
+
+class CompletedToursView(APIView):
+    """
+    Record that the current user finished or dismissed a guided tour.
+
+    POST /api/v1/auth/me/tours/   {"tour": "eaglet-intro-v1"}
+    -> {"success": true, "data": {"completed_tours": [...]}}
+
+    Idempotent. Tour ids are short slugs; the list is capped so a client
+    cannot grow the row without bound.
+    """
+
+    permission_classes = [IsAuthenticated]
+    MAX_TOURS = 50
+
+    class _Body(serializers.Serializer):
+        tour = serializers.RegexField(r'^[a-z0-9][a-z0-9-]{0,62}$', max_length=63)
+
+    def post(self, request):
+        body = self._Body(data=request.data)
+        body.is_valid(raise_exception=True)
+        tour = body.validated_data['tour']
+
+        from django.db import transaction
+
+        # Read-modify-write under a row lock: request.user may be stale, and two
+        # tours finishing close together must not drop one another.
+        with transaction.atomic():
+            row = User.objects.select_for_update().only('completed_tours').get(pk=request.user.pk)
+            tours = [t for t in (row.completed_tours or []) if isinstance(t, str)]
+            if tour not in tours:
+                tours = (tours + [tour])[-self.MAX_TOURS:]
+                User.objects.filter(pk=row.pk).update(completed_tours=tours)
+        return Response({'success': True, 'data': {'completed_tours': tours}})
