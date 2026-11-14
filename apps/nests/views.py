@@ -360,13 +360,13 @@ class NestPostViewSet(ViewSet):
     def like(self, request, nest_pk=None, pk=None):
         """Toggle like on a post. Returns { liked, likes_count }."""
         from .serializers import NestPostLikeToggleResponseSerializer
-        result = CommunityService.toggle_like(pk, request.user)
+        result = CommunityService.toggle_like(pk, request.user, nest_id=nest_pk)
         return Response(NestPostLikeToggleResponseSerializer(result).data)
 
     def list_comments(self, request, nest_pk=None, pk=None):
         """List top-level comments with replies for a post."""
         from .serializers import NestPostCommentSerializer
-        comments = CommunityService.get_comments(pk)
+        comments = CommunityService.get_comments(pk, nest_id=nest_pk)
         return Response(NestPostCommentSerializer(comments, many=True).data)
 
     def add_reply(self, request, nest_pk=None, pk=None, comment_pk=None):
@@ -378,7 +378,7 @@ class NestPostViewSet(ViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         from .serializers import ReplySerializer
-        reply = CommunityService.add_reply(comment_pk, request.user, content)
+        reply = CommunityService.add_reply(comment_pk, request.user, content, nest_id=nest_pk, post_id=pk)
         return Response(
             {"success": True, "data": ReplySerializer(reply).data},
             status=status.HTTP_201_CREATED,

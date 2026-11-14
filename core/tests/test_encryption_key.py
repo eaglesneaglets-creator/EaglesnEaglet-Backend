@@ -140,3 +140,49 @@ def test_backfill_leaves_rows_encrypted_under_a_different_key_alone(plaintext_ro
     call_command("reencrypt_national_ids")
 
     assert _raw(MenteeKYC, mentee.pk) == under_old_key
+
+
+@pytest.mark.django_db
+def test_backfill_does_not_overwrite_a_concurrent_change(plaintext_rows, settings, monkeypatch):
+    """Lost-update guard: the backfill reads plaintext from a streaming cursor and
+    writes it back later. If the user re-saves their ID in between, the stale
+    value must NOT clobber the newer one (compare-and-swap on the raw column)."""
+    from apps.users.management.commands import reencrypt_national_ids as cmd
+
+    mentee, _ = plaintext_rows
+    settings.ENCRYPTION_KEY = Fernet.generate_key().decode()
+    real_cipher = cmd.build_cipher(settings.ENCRYPTION_KEY)
+    corrected = "GHA-999999999-9"
+
+    class RacingCipher:
+        """Simulates the user saving a corrected ID right after the row is read."""
+        raced = False
+
+        def decrypt(self, token):
+            if not self.raced and token.decode() == NATIONAL_ID:
+                self.raced = True
+                MenteeKYC.objects.filter(pk=mentee.pk).update(national_id_number=corrected)
+            return real_cipher.decrypt(token)
+
+    monkeypatch.setattr(cmd, "build_cipher", lambda _key: RacingCipher())
+
+    call_command("reencrypt_national_ids")
+
+    assert MenteeKYC.objects.get(pk=mentee.pk).national_id_number == corrected
+
+
+def test_crypto_module_is_safe_to_import_from_settings():
+    """production.py imports core.crypto during settings load; it must not drag
+    in django.conf.settings or the ORM (circular ImproperlyConfigured risk)."""
+    import ast
+    import inspect
+
+    import core.crypto
+
+    tree = ast.parse(inspect.getsource(core.crypto))
+    imported = {
+        node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+    } | {
+        alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names
+    }
+    assert not any(m and (m.startswith("django.db") or m == "django.conf") for m in imported)

@@ -283,8 +283,37 @@ HUBTEL_SMS_CLIENT_ID = os.environ.get('HUBTEL_SMS_CLIENT_ID', '')
 HUBTEL_SMS_CLIENT_SECRET = os.environ.get('HUBTEL_SMS_CLIENT_SECRET', '')
 HUBTEL_SMS_SENDER_ID = os.environ.get('HUBTEL_SMS_SENDER_ID', 'EaglesNest')
 
-# Public URL of this backend (used for Hubtel callback URLs)
+# Public URL of this backend (used for Hubtel callback URLs and media links)
 BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:8000')
+
+# S3-compatible media storage (Railway Storage Bucket; RustFS in local Docker).
+# Reads explicit S3_* variables first, then the AWS_* names Railway injects
+# when a bucket is connected to a service. See core/object_storage.py.
+def _env_first(*names, default=''):
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return default
+
+
+OBJECT_STORAGE = {
+    'BUCKET': _env_first('S3_BUCKET', 'AWS_S3_BUCKET_NAME', 'BUCKET'),
+    'ENDPOINT': _env_first('S3_ENDPOINT', 'AWS_ENDPOINT_URL', 'ENDPOINT'),
+    'ACCESS_KEY_ID': _env_first('S3_ACCESS_KEY_ID', 'AWS_ACCESS_KEY_ID', 'ACCESS_KEY_ID'),
+    'SECRET_ACCESS_KEY': _env_first('S3_SECRET_ACCESS_KEY', 'AWS_SECRET_ACCESS_KEY', 'SECRET_ACCESS_KEY'),
+    'REGION': _env_first('S3_REGION', 'AWS_DEFAULT_REGION', 'REGION', default='auto'),
+    # 'auto' | 'path' | 'virtual' — local RustFS needs 'path'.
+    'ADDRESSING_STYLE': _env_first('S3_ADDRESSING_STYLE', default='auto'),
+    # Browser-facing endpoint, only when it differs from ENDPOINT (local Docker).
+    'PUBLIC_ENDPOINT': _env_first('S3_PUBLIC_ENDPOINT'),
+}
+
+# Where NEW uploads go: 'cloudinary' (default) or 'bucket'. Bucket credentials
+# alone do not switch storage, so connecting the bucket and deploying is safe;
+# flip this once the dry run looks right. Media links, the backfill command and
+# the bucket checks work as soon as credentials exist.
+MEDIA_STORAGE = os.environ.get('MEDIA_STORAGE', 'cloudinary').strip().lower()
 
 # Field-level encryption key (Fernet) for sensitive PII at rest (KYC national IDs).
 # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

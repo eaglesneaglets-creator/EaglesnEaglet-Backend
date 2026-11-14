@@ -15,6 +15,11 @@ from cloudinary.utils import cloudinary_url
 from django.conf import settings
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from . import object_storage
+
+#: Kept under its historical name; it now routes to the S3 bucket when one is
+#: configured. ``upload_media`` is the neutral alias for new code.
+
 
 # Folder map – mirrors CLOUDINARY_FOLDERS in settings
 FOLDER_MAP = {
@@ -120,6 +125,37 @@ UPLOAD_CONTEXTS = {
 }
 
 
+# MIME → Cloudinary format(s). Used to build the signed ``allowed_formats``
+# param so Cloudinary itself rejects disallowed file types on direct uploads.
+_MIME_TO_FORMATS = {
+    'image/jpeg': ('jpg', 'jpeg'),
+    'image/png': ('png',),
+    'image/webp': ('webp',),
+    'image/gif': ('gif',),
+    'video/mp4': ('mp4',),
+    'video/quicktime': ('mov',),
+    'video/webm': ('webm',),
+    'video/x-matroska': ('mkv',),
+    'application/pdf': ('pdf',),
+    'application/msword': ('doc',),
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ('docx',),
+    'application/vnd.ms-powerpoint': ('ppt',),
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': ('pptx',),
+    'text/plain': ('txt',),
+}
+
+
+def allowed_formats_for(allowed_mime) -> str:
+    """Comma-separated Cloudinary ``allowed_formats`` for a set of MIME types."""
+    formats = set()
+    for mime in allowed_mime:
+        try:
+            formats.update(_MIME_TO_FORMATS[mime])
+        except KeyError as exc:  # keep the map complete — fail loudly in tests
+            raise ValueError(f'No Cloudinary format mapping for MIME {mime!r}') from exc
+    return ','.join(sorted(formats))
+
+
 def _matches_declared_file_type(file, mime: str) -> bool:
     """Perform a small magic-byte check for the public generic media route."""
     position = file.tell() if hasattr(file, 'tell') else None
@@ -195,8 +231,26 @@ def upload_to_cloudinary(file, file_type: str, **kwargs):
 
     Returns:
         dict with 'url', 'secure_url', 'public_id', optimized URLs, and full response.
+
+    When the S3 bucket is configured (settings.OBJECT_STORAGE) the file goes
+    there instead and the same dict shape comes back; ``type='authenticated'``
+    maps to the bucket's private/ prefix.
     """
     folder = get_folder(file_type)
+
+    if object_storage.is_enabled():
+        try:
+            return object_storage.upload(
+                file, folder,
+                private=kwargs.get('type') == 'authenticated',
+                is_image=file_type in ('profile_pictures', 'content_images', 'store_images'),
+            )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("Bucket upload failed (%s): %s", file_type, exc)
+            raise DRFValidationError(
+                detail={"file": "Upload service is unreachable right now. Please try again in a moment."}
+            ) from exc
 
     # Determine resource type based on file_type or extension
     resource_type = 'auto'
@@ -298,6 +352,12 @@ def get_optimized_url(public_id: str, preset: str = None, **transform_kwargs) ->
     Returns:
         Optimized secure URL string.
     """
+    if public_id and str(public_id).startswith(object_storage.PUBLIC_PREFIX):
+        # Bucket objects have no on-the-fly transforms: small presets use the
+        # thumbnail written at upload time, everything else the original.
+        if preset in ('thumbnail', 'avatar', 'profile'):
+            return object_storage.thumbnail_url_for(public_id)
+        return object_storage.media_url(public_id)
     transformation = {
         'fetch_format': 'auto',
         'quality': 'auto',
@@ -352,7 +412,10 @@ def get_responsive_urls(public_id: str, widths: list = None) -> dict:
 def get_video_thumbnail(public_id: str, width: int = 600, height: int = 400) -> str:
     """
     Generate a thumbnail image from the middle of a video.
+    Returns None for bucket-stored videos (no server-side frame extraction).
     """
+    if str(public_id).startswith((object_storage.PUBLIC_PREFIX, object_storage.PRIVATE_PREFIX)):
+        return None
     url, _ = cloudinary_url(
         public_id,
         secure=True,
@@ -372,7 +435,10 @@ def get_pdf_thumbnail(public_id: str, width: int = 640, height: int = 800) -> st
     Generate a thumbnail image from first page of a PDF.
     PDF must be uploaded with resource_type='image' or handled via special transformation.
     Note: Cloudinary handles PDF-to-image if resource_type is 'image' or via specific flags.
+    Returns None for bucket-stored PDFs.
     """
+    if str(public_id).startswith((object_storage.PUBLIC_PREFIX, object_storage.PRIVATE_PREFIX)):
+        return None
     url, _ = cloudinary_url(
         public_id,
         secure=True,
@@ -391,5 +457,10 @@ def get_pdf_thumbnail(public_id: str, width: int = 640, height: int = 800) -> st
 
 
 def delete_from_cloudinary(public_id: str, resource_type: str = 'image'):
-    """Delete a file from Cloudinary by its public_id."""
+    """Delete a file by its public_id (bucket key or Cloudinary id)."""
+    if str(public_id).startswith((object_storage.PUBLIC_PREFIX, object_storage.PRIVATE_PREFIX)):
+        return object_storage.delete(public_id)
     return cloudinary.uploader.destroy(public_id, resource_type=resource_type)
+
+
+upload_media = upload_to_cloudinary

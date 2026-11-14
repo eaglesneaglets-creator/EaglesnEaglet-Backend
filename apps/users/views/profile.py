@@ -689,23 +689,21 @@ class UploadCVView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # Upload to Cloudinary and store the secure_url directly
-        from core.storage import upload_to_cloudinary
+        from core.private_docs import signed_document_url, upload_private_document
         try:
-            result = upload_to_cloudinary(file, 'cvs')
+            stored_ref = upload_private_document(file, 'cvs')
         except Exception as exc:
             logger.error("Cloudinary upload failed for CV (user %s): %s", request.user.id, exc)
             return Response({
                 'success': False,
                 'error': {'code': 503, 'type': 'UploadFailed', 'message': 'File upload failed. Please try again.'}
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        secure_url = result.get('secure_url')
-        if secure_url:
-            type(kyc).objects.filter(pk=kyc.pk).update(cv=secure_url)
+        type(kyc).objects.filter(pk=kyc.pk).update(cv=stored_ref)
 
         return Response({
             'success': True,
             'data': {
-                'cv': secure_url
+                'cv': signed_document_url(stored_ref)
             },
             'message': 'CV uploaded successfully.'
         })

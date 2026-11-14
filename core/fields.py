@@ -5,9 +5,13 @@ EncryptedCharField — transparent Fernet encryption-at-rest for sensitive PII
 """
 import logging
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import InvalidToken
 from django.conf import settings
 from django.db import models
+
+# Key validation lives in the dependency-free core.crypto so production settings
+# can import it at load time. Re-exported here for backwards compatibility.
+from core.crypto import build_cipher, require_encryption_key  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -30,43 +34,10 @@ def _get_cipher():
             )
             _MISSING_KEY_WARNED = True
         return None
-    try:
-        return Fernet(key.encode() if isinstance(key, str) else key)
-    except (ValueError, TypeError):
+    cipher = build_cipher(key)
+    if cipher is None:
         logger.error('ENCRYPTION_KEY is set but invalid — field encryption disabled.')
-        return None
-
-
-def require_encryption_key(key):
-    """Return ``key`` if it is a usable Fernet key; raise otherwise.
-
-    For production settings to call at import time, so a deployment WITHOUT field
-    encryption refuses to boot instead of quietly writing national IDs in
-    plaintext — which is exactly what happened: ``_get_cipher`` treats a missing
-    key as "passthrough" (right for local dev) and only logs a warning.
-
-    A malformed key is rejected too. Otherwise a typo'd value would reach
-    ``_get_cipher``, log an error, and fall back to plaintext all the same.
-
-    The key itself is never included in the error message.
-    """
-    from django.core.exceptions import ImproperlyConfigured
-
-    if not key or not str(key).strip():
-        raise ImproperlyConfigured(
-            "ENCRYPTION_KEY is not set. Production must encrypt KYC national IDs at "
-            "rest. Generate one with: python -c \"from cryptography.fernet import "
-            "Fernet; print(Fernet.generate_key().decode())\" — then store it safely: "
-            "if this key is ever lost or changed, already-encrypted data is unrecoverable."
-        )
-    try:
-        Fernet(key.encode() if isinstance(key, str) else key)
-    except (ValueError, TypeError) as exc:
-        raise ImproperlyConfigured(
-            "ENCRYPTION_KEY is set but is not a valid Fernet key (expected 32 "
-            "url-safe base64-encoded bytes, 44 characters)."
-        ) from exc
-    return key
+    return cipher
 
 
 class EncryptedCharField(models.TextField):

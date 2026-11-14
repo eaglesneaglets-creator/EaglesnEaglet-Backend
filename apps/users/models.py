@@ -716,6 +716,9 @@ class MentorKYC(TimestampMixin):
         upload_to='eaglesneaglets/documents/government_ids/',
         blank=True,
         null=True,
+        # Holds a private document reference (core.private_docs) or, for
+        # legacy rows, a full Cloudinary URL — both exceed the 100-char default.
+        max_length=500,
         help_text='[LEGACY] Government-issued ID (passport, driver\'s license, national ID)'
     )
     government_id_type = models.CharField(

@@ -13,15 +13,16 @@ until something re-saves them. This command is that something.
 
 Safe to re-run: rows that already decrypt with the current key are skipped.
 """
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import InvalidToken
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import TextField
 from django.db.models.functions import Cast
+from django.db.models.lookups import Exact
 
 from apps.users.models import MenteeKYC, MentorKYC
-from core.fields import require_encryption_key
+from core.crypto import build_cipher, require_encryption_key
 
 FIELD = "national_id_number"
 #: Every Fernet token is url-safe base64 of a payload whose first byte is the
@@ -43,9 +44,9 @@ class Command(BaseCommand):
             key = require_encryption_key(getattr(settings, "ENCRYPTION_KEY", ""))
         except ImproperlyConfigured as exc:
             raise CommandError(str(exc)) from exc
-        cipher = Fernet(key.encode())
+        cipher = build_cipher(key)
 
-        totals = {"encrypted": 0, "already": 0, "foreign": 0}
+        totals = {"encrypted": 0, "already": 0, "foreign": 0, "changed": 0}
         for model in (MentorKYC, MenteeKYC):
             counts = self._process(model, cipher, dry_run)
             for name, n in counts.items():
@@ -53,8 +54,15 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"{model.__name__}: {counts['encrypted']} "
                 f"{'would be ' if dry_run else ''}encrypted, "
-                f"{counts['already']} already encrypted, {counts['foreign']} skipped"
+                f"{counts['already']} already encrypted, {counts['foreign']} skipped, "
+                f"{counts['changed']} changed concurrently"
             )
+
+        if totals["changed"]:
+            self.stdout.write(self.style.WARNING(
+                f"{totals['changed']} row(s) changed while the command was running and "
+                "were left as the newer value. Re-run the command to process them."
+            ))
 
         if totals["foreign"]:
             self.stdout.write(self.style.WARNING(
@@ -68,7 +76,7 @@ class Command(BaseCommand):
                                              f"{'need' if dry_run else 'were'} encrypt{'ing' if dry_run else 'ed'}."))
 
     def _process(self, model, cipher, dry_run):
-        counts = {"encrypted": 0, "already": 0, "foreign": 0}
+        counts = {"encrypted": 0, "already": 0, "foreign": 0, "changed": 0}
         # Cast() reads the column AS STORED. Selecting the field normally would run
         # EncryptedCharField.from_db_value and hand back decrypted text, making
         # plaintext and ciphertext rows indistinguishable.
@@ -94,11 +102,26 @@ class Command(BaseCommand):
                 counts["foreign"] += 1
                 continue
 
-            counts["encrypted"] += 1
-            if not dry_run:
-                # .update() encrypts via get_prep_value, and deliberately bypasses
-                # save(): no signals, no auto_now bump, and no clash with the rule
-                # that approved KYC records are immutable. The VALUE is unchanged —
-                # only its at-rest representation.
-                model.objects.filter(pk=pk).update(**{FIELD: raw})
+            if dry_run:
+                counts["encrypted"] += 1
+                continue
+
+            # .update() encrypts via get_prep_value, and deliberately bypasses
+            # save(): no signals, no auto_now bump, and no clash with the rule
+            # that approved KYC records are immutable. The VALUE is unchanged —
+            # only its at-rest representation.
+            #
+            # Compare-and-swap: only overwrite if the stored column still holds
+            # exactly the plaintext we read. If a user re-saved their ID between
+            # the streaming read and this write, the row no longer matches and
+            # we leave their newer (already-encrypted) value alone.
+            updated = (
+                model.objects
+                .filter(Exact(Cast(FIELD, TextField()), raw), pk=pk)
+                .update(**{FIELD: raw})
+            )
+            if updated:
+                counts["encrypted"] += 1
+            else:
+                counts["changed"] += 1
         return counts

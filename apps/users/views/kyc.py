@@ -252,23 +252,23 @@ class UploadGovernmentIDView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # Upload to Cloudinary and store the secure_url directly
-        from core.storage import upload_to_cloudinary
+        # Identity documents are stored PRIVATE (authenticated delivery); the
+        # field keeps an opaque reference and readers get a short-lived URL.
+        from core.private_docs import signed_document_url, upload_private_document
         try:
-            result = upload_to_cloudinary(file, 'government_ids')
+            stored_ref = upload_private_document(file, 'government_ids')
         except Exception as exc:
             logger.error("Cloudinary upload failed for government_id (user %s): %s", request.user.id, exc)
             return Response({
                 'success': False,
                 'error': {'code': 503, 'type': 'UploadFailed', 'message': 'File upload failed. Please try again.'}
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        secure_url = result.get('secure_url')
-        if secure_url:
-            type(kyc).objects.filter(pk=kyc.pk).update(government_id=secure_url)
+        type(kyc).objects.filter(pk=kyc.pk).update(government_id=stored_ref)
 
         return Response({
             'success': True,
             'data': {
-                'government_id': secure_url
+                'government_id': signed_document_url(stored_ref)
             },
             'message': 'Government ID uploaded successfully.'
         })
@@ -333,23 +333,23 @@ class UploadRecommendationView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # Upload to Cloudinary and store the secure_url directly
-        from core.storage import upload_to_cloudinary
+        # Identity documents are stored PRIVATE (authenticated delivery); the
+        # field keeps an opaque reference and readers get a short-lived URL.
+        from core.private_docs import signed_document_url, upload_private_document
         try:
-            result = upload_to_cloudinary(file, 'recommendations')
+            stored_ref = upload_private_document(file, 'recommendations')
         except Exception as exc:
             logger.error("Cloudinary upload failed for recommendation (user %s): %s", request.user.id, exc)
             return Response({
                 'success': False,
                 'error': {'code': 503, 'type': 'UploadFailed', 'message': 'File upload failed. Please try again.'}
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        secure_url = result.get('secure_url')
-        if secure_url:
-            type(kyc).objects.filter(pk=kyc.pk).update(recommendation_letter=secure_url)
+        type(kyc).objects.filter(pk=kyc.pk).update(recommendation_letter=stored_ref)
 
         return Response({
             'success': True,
             'data': {
-                'recommendation_letter': secure_url
+                'recommendation_letter': signed_document_url(stored_ref)
             },
             'message': 'Recommendation letter uploaded successfully.'
         })

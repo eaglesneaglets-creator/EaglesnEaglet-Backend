@@ -129,6 +129,34 @@ def test_mark_order_paid_preserves_first_transaction_id(pending_order):
 
 
 @pytest.mark.django_db
+def test_mark_order_paid_rejects_underpayment(pending_order):
+    """Paystack reports a smaller charge than the order total (150.00 GHS =
+    15000 pesewas): the order must not be fulfilled."""
+    order = StoreService.mark_order_paid(
+        pending_order.paystack_reference, "txn_short", amount_minor=100, currency="GHS",
+    )
+    order.refresh_from_db()
+    assert order.status != Order.Status.PAID
+
+
+@pytest.mark.django_db
+def test_mark_order_paid_rejects_wrong_currency(pending_order):
+    order = StoreService.mark_order_paid(
+        pending_order.paystack_reference, "txn_usd", amount_minor=15000, currency="USD",
+    )
+    order.refresh_from_db()
+    assert order.status != Order.Status.PAID
+
+
+@pytest.mark.django_db
+def test_mark_order_paid_accepts_exact_amount(pending_order):
+    order = StoreService.mark_order_paid(
+        pending_order.paystack_reference, "txn_ok", amount_minor=15000, currency="GHS",
+    )
+    assert order.status == Order.Status.PAID
+
+
+@pytest.mark.django_db
 def test_mark_order_paid_unknown_reference_raises():
     """Non-existent reference must raise NotFound, not silently succeed."""
     from rest_framework.exceptions import NotFound
@@ -156,7 +184,7 @@ def test_webhook_invalid_signature_returns_400(api):
 def test_webhook_valid_charge_success_dispatches_task(mock_task, api):
     payload = json.dumps({
         "event": "charge.success",
-        "data": {"reference": "ref_test_001", "id": 99999}
+        "data": {"reference": "ref_test_001", "id": 99999, "amount": 15000, "currency": "GHS"}
     }).encode()
     sig = _make_sig(payload)
 
@@ -167,7 +195,7 @@ def test_webhook_valid_charge_success_dispatches_task(mock_task, api):
         HTTP_X_PAYSTACK_SIGNATURE=sig,
     )
     assert response.status_code == 200
-    mock_task.delay.assert_called_once_with("ref_test_001", "99999")
+    mock_task.delay.assert_called_once_with("ref_test_001", "99999", amount=15000, currency="GHS")
 
 
 @pytest.mark.django_db

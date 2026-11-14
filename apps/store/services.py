@@ -352,9 +352,19 @@ class StoreService:
 
     @staticmethod
     @transaction.atomic
-    def mark_order_paid(reference: str, transaction_id: str) -> Order:
+    def mark_order_paid(
+        reference: str,
+        transaction_id: str,
+        amount_minor=None,
+        currency: str = None,
+    ) -> Order:
         """
         Idempotent: if order is already PAID, return immediately without any write.
+
+        ``amount_minor`` / ``currency`` are what Paystack reports was actually
+        charged. When supplied they must match the order (Paystack's own
+        guidance: verify amount before giving value). A mismatch is logged and
+        the order is left unpaid for manual review.
 
         Uses select_for_update() to prevent a race condition where two concurrent
         Celery workers (triggered by Paystack webhook retries) both see status=PENDING
@@ -370,6 +380,26 @@ class StoreService:
             # Idempotency guard — safe to call multiple times (Paystack retries webhooks)
             logger.info("Idempotency guard: order %s already PAID, skipping.", order.id)
             return order  # EARLY RETURN — no DB write
+
+        expected_minor = int(order.total_amount * 100)
+        if amount_minor is not None:
+            try:
+                paid_minor = int(amount_minor)
+            except (TypeError, ValueError):
+                paid_minor = None
+            if paid_minor != expected_minor:
+                logger.error(
+                    "Payment amount mismatch for order %s: expected %s, Paystack reported %s. "
+                    "Order NOT marked paid.",
+                    order.id, expected_minor, amount_minor,
+                )
+                return order
+        if currency and str(currency).upper() != "GHS":
+            logger.error(
+                "Payment currency mismatch for order %s: Paystack reported %s. Order NOT marked paid.",
+                order.id, currency,
+            )
+            return order
 
         order.status = Order.Status.PAID
         order.paystack_transaction_id = str(transaction_id)
