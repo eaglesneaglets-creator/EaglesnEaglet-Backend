@@ -157,6 +157,11 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampMixin):
         help_text='Whether the user has elevated platform-admin privileges.',
     )
 
+    # Guided product tours the user has finished or dismissed (ids such as
+    # "eaglet-intro-v1"). Server-side so a tour isn't replayed on every new
+    # device or browser. Written only via POST /auth/me/tours/.
+    completed_tours = models.JSONField(default=list, blank=True)
+
     # Security fields
     failed_login_attempts = models.PositiveIntegerField(default=0)
     last_failed_login = models.DateTimeField(null=True, blank=True)

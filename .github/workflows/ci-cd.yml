@@ -1,4 +1,4 @@
-name: Backend CI / CD
+name: Backend CI
 
 on:
   push:
@@ -86,30 +86,7 @@ jobs:
       - name: Run tests
         run: pytest --tb=short -q --no-header
 
-# ─────────────────────────────────────────────────────────────────────────────
-# JOB 2: Deploy to Railway (main branch only)
-# ─────────────────────────────────────────────────────────────────────────────
-  deploy:
-    name: Deploy → Railway
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    environment: production
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
-      - name: Deploy
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --service EaglesnEaglet-Backend --detach
-
-      - name: Deployment summary
-        run: |
-          echo "✅ Backend deployed to Railway"
-          echo "Commit: ${{ github.sha }}"
-          echo "Triggered by: ${{ github.actor }}"
+# Deployment is not done here. Railway deploys the API and worker straight
+# from GitHub when `main` changes, and waits for this workflow to pass first
+# ("Wait for CI"). A second deploy from CI duplicated that and, when it failed,
+# made Railway skip the release.

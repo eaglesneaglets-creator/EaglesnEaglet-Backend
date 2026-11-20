@@ -42,6 +42,7 @@ urlpatterns = [
     # CURRENT USER
     # =========================================================================
     path('me/', views.CurrentUserView.as_view(), name='current-user'),
+    path('me/tours/', views.CompletedToursView.as_view(), name='completed-tours'),
 
     # =========================================================================
     # MENTOR KYC

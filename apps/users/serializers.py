@@ -182,14 +182,14 @@ class UserSerializer(serializers.ModelSerializer):
             'is_email_verified', 'is_phone_verified', 'date_of_birth',
             'profile_visibility',
             'is_staff', 'is_superuser', 'is_platform_staff', 'has_password',
-            'kyc_status',
+            'kyc_status', 'completed_tours',
             'created_at', 'last_login',
         ]
         read_only_fields = [
             'id', 'email', 'role', 'status', 'is_email_verified',
             'is_phone_verified', 'is_staff', 'is_superuser',
             'is_platform_staff', 'has_password', 'kyc_status', 'avatar_url',
-            'created_at', 'last_login',
+            'completed_tours', 'created_at', 'last_login',
         ]
 
     def get_has_password(self, obj):
